@@ -41,6 +41,14 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 
 ---
 
+## Defect fix (DEFECT-117)
+
+**Root cause:** The `useEffect` hook in `useTicketList` debounced fetches but only included `[filters.search, filters.page, filters.pageSize]` in its dependency array, omitting `status` and all other filter controls. Consequently, changing dropdown filters never triggered a network request until a tracked dependency such as `search` changed and triggered the debounced effect with the accumulated state.
+
+**Fix:** In `useTicketList`, any non-search filter change triggers an immediate request to `GET /api/tickets`, while `search` input changes remain debounced by 300ms so no requests fire per keystroke. All non-search filter properties (including Task 2's `slaStatus`) trigger immediately without requiring special wiring.
+
+---
+
 ## Quick start
 
 **Prerequisites:** .NET SDK 10 (`global.json`), Node.js 22 (`.nvmrc`; 20.19+ works), Docker.
