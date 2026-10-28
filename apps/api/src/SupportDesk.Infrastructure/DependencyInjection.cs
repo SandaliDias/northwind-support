@@ -20,9 +20,11 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Default")
-            ?? throw new InvalidOperationException(
-                "Connection string 'Default' is missing. See README.md for local setup.");
+        var connectionString = configuration.GetConnectionString("Default");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("Connection string 'Default' is missing. See README.md for local setup.");
+        }
 
         services.AddDbContext<SupportDbContext>(options =>
             options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()));

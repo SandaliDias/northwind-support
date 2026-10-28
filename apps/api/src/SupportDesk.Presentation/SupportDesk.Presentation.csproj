@@ -16,4 +16,9 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Container deployments receive all settings at runtime; local dotnet run keeps its normal settings. -->
+  <ItemGroup Condition="'$(ContainerBuild)' == 'true'">
+    <Content Remove="appsettings*.json" />
+  </ItemGroup>
+
 </Project>
