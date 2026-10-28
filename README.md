@@ -63,6 +63,73 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 
 ---
 
+## Task 2: triage, escalation and SLA
+
+Creation uses requested priority (default Medium), overridden by the category's forced-Critical
+flag. `Sla` in `appsettings.Development.json` controls 4/8/24/72-hour windows, Premium's 0.5
+multiplier, 1-hour Premium floor and 25% risk threshold. Change configuration and restart;
+existing due dates remain promises, while subsequent create/escalate operations use new windows.
+
+Active eligible agents must be below capacity and specialized when the category flag requires it.
+Choose fewest open tickets, then lowest agent ID. Escalation keeps an eligible owner, including
+this ticket in the open count: an owner at the limit is ineligible. Changed manual assignments
+use the same rules. No candidate is a normal, explained unassigned outcome.
+
+Escalation raises one level and resets the window from now; Critical/Resolved/Closed returns 409.
+Reasons are trimmed to 5–500 characters, temporary actors to 1–100; the UI validates before
+submission. Task 3 must replace this caller-supplied actor with the authenticated identity.
+Exactly at due is At risk for unresolved tickets and Met for a resolution; breach is strictly late.
+SLA is derived, never stored. The migration adds window-start metadata, a concurrency token,
+immutable `TicketEscalations` and the mapped SQL function used before count/paging. Its
+`(TicketId, EscalatedAtUtc DESC, Id DESC)` index supports stable newest-first history; agent FK
+indexes support referential checks. Ticket/agent deletes are restricted to retain audit history.
+
+**Design:** The primary design constraint was sharing rules between create and escalation without putting
+EF/HTTP in the domain or business decisions in controllers. `SlaPolicy` owns configurable window
+calculation and priority resolution; `AgentAssignmentPolicy` owns eligibility, preferred-owner
+retention and deterministic selection. `TicketTriageService` combines those policies with a
+single projected candidate query and human-readable explanations. A generic rules engine and
+one interface per rule were rejected because these are small deterministic policies.
+
+CQRS already fits the starter: command handlers change tracked aggregates; no-tracking queries
+project only the DTO data needed by list/detail/history. Repository/Unit of Work is the existing
+persistence seam; one SaveChanges transaction includes an escalation's ticket update and audit
+insert. A GUID concurrency token changes on ticket mutations, so stale writes become a 409 and
+the losing audit insert rolls back. The persistence test exercises two contexts loaded before
+the winning escalation, rather than merely mocking a conflict.
+
+The current owner must remain strictly below MaxOpenTickets, including this open ticket, on
+escalation. This literal BR-5 interpretation can replace an agent who is exactly at capacity;
+it is explicitly tested. Manual assignment no longer bypasses the specialist/capacity rules for
+a changed owner. An eligible current owner is retained over a less busy alternative. Ineligible
+or absent owners are reassigned by open count then ID; nobody eligible is a successful null
+assignment. General/Technical specialization names are not hard-coded: only flags drive rules.
+
+`Ticket.ApplyTriage` and `Ticket.Escalate` provide domain behavior for state changes. Escalate
+checks terminal status/Critical before mutation and snapshots priority, nullable owner and due
+date before updating them. Immutable history has private setters, no update/delete API, save-time
+mutation protection, length constraints, priority constraints and restricted foreign keys. This
+does not claim protection against privileged direct SQL changes. The history index begins with
+TicketId and uses descending timestamp/ID for both lookup and deterministic newest-first order.
+Separate agent FK indexes are retained; no redundant TicketId-only index is needed.
+
+**Verification:** Run `dotnet test --configuration Release`, `npm run test --workspace apps/web`, `npm run lint`,
+`npm run typecheck`, and `npm run build --workspace apps/web`. For real SQL/HTTP coverage, set
+`SUPPORTDESK_TEST_SQL` as shown in Tests section before dotnet test. The verified result was 77 backend tests (three SQL/HTTP tests included), four architecture/model
+checks, and 22 frontend tests. The three opt-in tests create only
+unique SupportDesk_Task2_<guid> databases and remove them in finally blocks; the HTTP test starts
+and terminates only its own API process on an ephemeral loopback port. No existing application
+process or database is stopped/reset. Without that environment variable the tests are visibly
+skipped. Ordinary SQLite/domain/component/architecture tests need no server.
+
+Tests cover all priority/tier windows, configurable floor, forced priority flags, specialization,
+capacity/inactive/ties/no candidates, retained/replaced owners, escalation state/reason/actor
+rejections and exact history snapshots, immutable persistence and concurrency rollback, SLA
+boundaries and SQL parity, HTTP status contracts including successful unassignment, five distinct
+SLA labels, real SLA query serialization, client validation/no-call, pending state, 409 without
+mutation, and detail/history refresh including partial failure. No load test, browser screenshot
+review, multi-instance capacity serialization or production migration deployment was performed.
+
 ## Quick start
 
 **Prerequisites:** .NET SDK 10 (`global.json`), Node.js 22 (`.nvmrc`; 20.19+ works), Docker.
@@ -93,7 +160,17 @@ credentials.**
 npm test                      # dotnet test, then the web tests (Vitest)
 ```
 
-Both pass on a clean checkout and neither needs a database.
+The ordinary suites do not need a database. Three SQL Server/real HTTP integration tests are
+explicitly skipped unless `SUPPORTDESK_TEST_SQL` is set. In PowerShell, after `npm run db:up`:
+
+```powershell
+$env:SUPPORTDESK_TEST_SQL='Server=localhost,1433;Database=master;User Id=sa;Password=Local_Dev_Password1;TrustServerCertificate=True;Encrypt=False'
+dotnet test --configuration Release
+```
+
+These tests create and delete only their own `SupportDesk_Task2_<guid>` databases and require
+create/drop permission. Release avoids Debug DLL locks if the developer API is running.
+Web tests use one thread worker to avoid fork startup timeouts on constrained Windows hosts.
 
 ## Commands
 
@@ -109,16 +186,18 @@ Both pass on a clean checkout and neither needs a database.
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /api/tickets` | Paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `sortBy`, `sortDirection`. **Filters are accepted but not applied yet** (Task 1). |
+| `GET /api/tickets` | Paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `slaStatus`, `sortBy`, `sortDirection`; filters/count/sort/paging run in SQL. |
 | `GET /api/tickets/{id}` | One ticket |
-| `POST /api/tickets` | Create a ticket |
+| `POST /api/tickets` | Create with automatic priority, due date, owner and `triage` explanations (201 even when unassigned) |
+| `POST /api/tickets/{id}/escalate` | `{ "reason": "Customer impact increased", "escalatedBy": "Team lead" }`; returns updated `ticket` and `escalation` |
+| `GET /api/tickets/{id}/escalations` | Immutable before/after history, newest first |
 | `PATCH /api/tickets/{id}/status` · `/assignment` | Change status / assignee |
 | `GET /api/customers` · `/api/agents` · `/api/categories` | Reference data |
 
 Errors are `ProblemDetails`: `400` validation, `404` not found, `409` conflict or business rule.
 
 **Seed data:** 5 categories, 6 customers (3 Premium), 6 agents (one inactive, one at their limit)
-and 40 tickets across every status, priority and SLA state.
+and 40 historical tickets across statuses/priorities and timed SLA states; No SLA is covered by explicit test fixtures.
 
 ## Troubleshooting
 
@@ -129,3 +208,19 @@ and 40 tickets across every status, priority and SLA state.
 | Browser warns about the certificate | `dotnet dev-certs https --trust`, or use the web app, which proxies |
 | Web app shows "Unable to load tickets" | The API is not running, or `VITE_API_PROXY_TARGET` points at the wrong port |
 | SQL Server slow on Apple Silicon | Enable Rosetta in Docker Desktop → Settings → General |
+
+## Current limitations and AI use
+
+Task 3 authentication and Task 4 API container are not implemented in this change. Login
+credentials are therefore not available yet. The optional SLA summary report is not implemented.
+Simultaneous creates can race on agent capacity and highest-ID reference generation; optimistic
+concurrency protects changes to an existing ticket, not global agent capacity. Historical seed
+priorities are retained even where current create-time flags would force Critical. SQL reference
+scripts describe the starter; use EF migrations for the upgraded schema. No browser visual QA
+was performed; automated component and real API/database tests verify the implemented behavior.
+
+Codex assisted with repository review, implementation and tests. Generated code was checked by
+compilation, architecture tests, SQL Server parity/upgrade/HTTP tests and React behavior tests;
+[APPROACH.md](APPROACH.md) records an accepted design and a generated test issue corrected during
+verification. Registration/reset, roles, SSO, refresh tokens, MFA, notifications, background jobs,
+CI additions, caching, real-time updates and deployment work remain outside this Task 2 change.

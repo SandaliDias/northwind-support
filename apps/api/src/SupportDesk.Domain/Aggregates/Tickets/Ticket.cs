@@ -45,6 +45,52 @@ public sealed class Ticket : AggregateRoot
 
     public DateTime? ResolvedAtUtc { get; private set; }
 
+    public DateTime? SlaStartedAtUtc { get; private set; }
+
+    /// <summary>Application-managed token, portable to SQL Server and SQLite tests.</summary>
+    public Guid Version { get; private set; } = Guid.NewGuid();
+
+    public void ApplyTriage(DateTime dueAtUtc, int? agentId, DateTime nowUtc)
+    {
+        if (dueAtUtc <= nowUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dueAtUtc));
+        }
+
+        DueAtUtc = dueAtUtc;
+        SlaStartedAtUtc = nowUtc;
+        AssignTo(agentId, nowUtc);
+    }
+
+    public void EnsureCanEscalate()
+    {
+        if (!IsOpen)
+        {
+            throw new BusinessRuleViolationException($"Ticket {Reference} is {Status} and cannot be escalated.");
+        }
+
+        if (Priority == TicketPriority.Critical)
+        {
+            throw new BusinessRuleViolationException($"Ticket {Reference} is already Critical and cannot be escalated.");
+        }
+    }
+
+    public TicketEscalation Escalate(DateTime dueAtUtc, int? agentId, string reason,
+        string escalatedBy, DateTime nowUtc)
+    {
+        EnsureCanEscalate();
+        if (dueAtUtc <= nowUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dueAtUtc));
+        }
+
+        var history = new TicketEscalation(Id, Priority, Priority + 1, AssignedAgentId,
+            agentId, DueAtUtc, dueAtUtc, reason, escalatedBy, nowUtc);
+        Priority++;
+        ApplyTriage(dueAtUtc, agentId, nowUtc);
+        return history;
+    }
+
     /// <summary>True while the ticket still needs work from an agent.</summary>
     public bool IsOpen => Status is not (TicketStatus.Resolved or TicketStatus.Closed);
 
@@ -100,6 +146,7 @@ public sealed class Ticket : AggregateRoot
 
         Status = status;
         UpdatedAtUtc = nowUtc;
+        Version = Guid.NewGuid();
     }
 
     /// <summary>
@@ -110,5 +157,6 @@ public sealed class Ticket : AggregateRoot
     {
         AssignedAgentId = agentId;
         UpdatedAtUtc = nowUtc;
+        Version = Guid.NewGuid();
     }
 }

@@ -22,6 +22,8 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         });
 
         builder.HasKey(t => t.Id);
+        builder.Property(t => t.Version).IsConcurrencyToken();
+        builder.Property(t => t.SlaStartedAtUtc).HasColumnType("datetime2(3)");
 
         builder.Property(t => t.Reference).HasMaxLength(20).IsRequired();
 

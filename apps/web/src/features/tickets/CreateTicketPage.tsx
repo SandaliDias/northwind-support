@@ -5,6 +5,8 @@ import { Spinner } from '../../components/Spinner';
 import { useReferenceData } from '../../hooks/useReferenceData';
 import type { TicketDetail } from '../../types/api';
 import { CreateTicketForm } from './components/CreateTicketForm';
+import { formatDateTime } from '../../lib/format';
+import { SlaCell } from './components/SlaCell';
 
 export function CreateTicketPage() {
   const reference = useReferenceData();
@@ -33,6 +35,15 @@ export function CreateTicketPage() {
           <p>
             Raised <strong>{created.reference}</strong> for {created.customer.name}.
           </p>
+          <p>Applied priority: <strong>{created.priority}</strong>.</p>
+          <p>Due: {formatDateTime(created.dueAtUtc)}.</p>
+          <p>Assigned agent: {created.assignedAgent?.fullName ?? 'Unassigned'}.</p>
+          <SlaCell dueAtUtc={created.dueAtUtc} slaStatus={created.slaStatus} />
+          {created.triage && <>
+            <p>{created.triage.priorityReason}</p>
+            <p>{created.triage.slaWindowReason}</p>
+            <p>{created.triage.assignmentReason}</p>
+          </>}
           <div className="button-row">
             <button
               type="button"

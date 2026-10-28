@@ -1,5 +1,8 @@
 import type {
   CreateTicketPayload,
+  EscalateTicketPayload,
+  EscalateTicketResult,
+  TicketEscalation,
   PagedResult,
   TicketDetail,
   TicketFilters,
@@ -25,6 +28,7 @@ function buildQuery(filters: TicketFilters): string {
   append('pageSize', filters.pageSize);
   append('search', filters.search.trim());
   append('status', filters.status);
+  append('slaStatus', filters.slaStatus);
   append('priority', filters.priority);
   append('categoryId', filters.categoryId);
   append('customerId', filters.customerId);
@@ -37,6 +41,13 @@ function buildQuery(filters: TicketFilters): string {
 }
 
 export const ticketsApi = {
+  getEscalations: (id: number) => request<TicketEscalation[]>(`/tickets/${id}/escalations`),
+
+  escalate: (id: number, payload: EscalateTicketPayload) =>
+    request<EscalateTicketResult>(`/tickets/${id}/escalate`, {
+      method: 'POST', body: JSON.stringify(payload),
+    }),
+
   getTickets: (filters: TicketFilters) =>
     request<PagedResult<TicketListItem>>(`/tickets?${buildQuery(filters)}`),
 

@@ -7,5 +7,7 @@ namespace SupportDesk.Domain.Repositories;
 /// </summary>
 public interface ICustomerRepository
 {
+    Task<Customer?> GetByIdAsync(int id, CancellationToken ct);
+
     Task<bool> ExistsAsync(int id, CancellationToken ct);
 }

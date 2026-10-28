@@ -3,6 +3,7 @@ using SupportDesk.Application.Abstractions;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Exceptions;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
+using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Repositories;
 
 namespace SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
@@ -10,13 +11,11 @@ namespace SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
 /// <summary>
 /// Hands a ticket to an agent, or takes it back off them when no agent is given.
 /// </summary>
-/// <remarks>
-/// This is the manual override the team lead uses, so it deliberately does not check the
-/// category's specialist rule.
-/// </remarks>
 public sealed class AssignTicketCommandHandler(
     ITicketRepository tickets,
     IAgentRepository agents,
+    ICategoryRepository categories,
+    IAssignmentQueries assignments,
     IUnitOfWork unitOfWork,
     IClock clock,
     GetTicketQueryHandler getTicket,
@@ -36,6 +35,17 @@ public sealed class AssignTicketCommandHandler(
             {
                 throw new ConflictException(
                     $"Agent {agent.FullName} is not active and cannot take new tickets.");
+            }
+        }
+
+        if (request.AgentId is { } targetId && targetId != ticket.AssignedAgentId)
+        {
+            var category = await categories.GetByIdAsync(ticket.CategoryId, ct)
+                ?? throw new NotFoundException("Category", ticket.CategoryId);
+            var candidate = (await assignments.GetCandidatesAsync(ticket.CategoryId, ct)).SingleOrDefault(a => a.Id == targetId);
+            if (candidate is null || !AgentAssignmentPolicy.IsEligible(candidate, category.RequiresSpecialist))
+            {
+                throw new ConflictException("The selected agent does not meet specialization or capacity requirements.");
             }
         }
 

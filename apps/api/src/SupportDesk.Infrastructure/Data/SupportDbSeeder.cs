@@ -10,12 +10,12 @@ namespace SupportDesk.Infrastructure.Data;
 
 /// <summary>
 /// Development seed data: the small support desk the team uses to demo the application.
-/// Mirrors <c>database/02_seed.sql</c>, including the relative timestamps, so both routes
+/// Mirrors <c>db/seed.sql</c>, including the relative timestamps, so both routes
 /// produce the same database.
 /// </summary>
 /// <remarks>
-/// Every aggregate is built through its own behaviour. The two historical values no behaviour
-/// produces - a ticket's last update and its due date - are set through EF Core directly.
+/// Aggregates are built through their own behaviour, retaining historical priorities/windows.
+/// Only the historical last-update timestamp is set through EF Core directly.
 /// </remarks>
 public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger)
 {
@@ -180,6 +180,8 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
                 row.Priority,
                 createdAtUtc);
 
+            ticket.ApplyTriage(createdAtUtc.AddMinutes(row.SlaWindowMinutes), null, createdAtUtc);
+
             if (row.AgentIndex is not null)
             {
                 ticket.AssignTo(agents[row.AgentIndex.Value - 1].Id, createdAtUtc);
@@ -194,7 +196,6 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
             var entry = db.Add(ticket);
             entry.Property(t => t.UpdatedAtUtc).CurrentValue =
                 createdAtUtc.AddMinutes(row.ResolvedAfterMinutes ?? row.CreatedMinutesAgo / 2);
-            entry.Property(t => t.DueAtUtc).CurrentValue = createdAtUtc.AddMinutes(row.SlaWindowMinutes);
         }
     }
 

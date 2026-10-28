@@ -30,6 +30,11 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+var sla = builder.Configuration.GetSection("Sla").Get<SupportDesk.Domain.Aggregates.Tickets.SlaPolicy>()
+    ?? new SupportDesk.Domain.Aggregates.Tickets.SlaPolicy();
+sla.Validate();
+builder.Services.AddSingleton(sla);
+
 var app = builder.Build();
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
