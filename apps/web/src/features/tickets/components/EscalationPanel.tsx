@@ -8,7 +8,6 @@ interface Props { ticket: TicketDetail; onEscalated: (result: EscalateTicketResu
 
 export function EscalationPanel({ ticket, onEscalated }: Props) {
   const [reason, setReason] = useState('');
-  const [actor, setActor] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -19,13 +18,12 @@ export function EscalationPanel({ ticket, onEscalated }: Props) {
     if (pending || blocked) return;
     const validation: Record<string, string> = {};
     if (reason.trim().length < 5 || reason.trim().length > 500) validation.reason = 'Enter a reason of 5-500 characters.';
-    if (actor.trim().length < 1 || actor.trim().length > 100) validation.escalatedBy = 'Enter an actor of 1-100 characters.';
     setErrors(validation);
     setError(undefined);
     if (Object.keys(validation).length > 0) return;
     setPending(true);
     try {
-      const result = await ticketsApi.escalate(ticket.id, { reason: reason.trim(), escalatedBy: actor.trim() });
+      const result = await ticketsApi.escalate(ticket.id, { reason: reason.trim() });
       setReason('');
       onEscalated(result);
     } catch (caught) {
@@ -43,11 +41,6 @@ export function EscalationPanel({ ticket, onEscalated }: Props) {
     <Field id="escalation-reason" label="Reason" error={errors.reason} hint="5-500 characters after trimming.">
       {(props) => <textarea {...props} value={reason} onChange={(event) => setReason(event.target.value)}
         rows={3} disabled={pending || blocked} />}
-    </Field>
-    <Field id="escalation-actor" label="Escalated by" error={errors.escalatedBy}
-      hint="Temporary actor field until agent sign-in is implemented.">
-      {(props) => <input {...props} value={actor} onChange={(event) => setActor(event.target.value)}
-        disabled={pending || blocked} />}
     </Field>
     {error && <p role="alert" className="field__error">{error}</p>}
     <button type="submit" className="button button--primary" disabled={pending || blocked}>

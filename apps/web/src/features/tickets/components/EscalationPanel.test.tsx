@@ -14,7 +14,6 @@ const ticket: TicketDetail = { ...ticketListItem(), description: 'A description 
 
 function enter(reason = 'Impact increased') {
   fireEvent.change(screen.getByLabelText('Reason'), { target: { value: reason } });
-  fireEvent.change(screen.getByLabelText('Escalated by'), { target: { value: 'Lead' } });
 }
 
 describe('EscalationPanel', () => {
@@ -50,7 +49,7 @@ describe('EscalationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Escalate' }));
     expect(screen.getByRole('button', { name: 'Escalating...' })).toBeDisabled();
     expect(screen.getByLabelText('Reason')).toBeDisabled();
-    expect(escalate).toHaveBeenCalledWith(ticket.id, { reason: 'Impact increased', escalatedBy: 'Lead' });
+    expect(escalate).toHaveBeenCalledWith(ticket.id, { reason: 'Impact increased' });
     const result: EscalateTicketResult = { ticket: { ...ticket, priority: 'Critical' }, escalation: {
       id: 1, fromPriority: 'High', toPriority: 'Critical', fromAgent: null, toAgent: null,
       fromDueAtUtc: null, toDueAtUtc: null, reason: 'Impact increased', escalatedBy: 'Lead', escalatedAtUtc: ticket.createdAtUtc,

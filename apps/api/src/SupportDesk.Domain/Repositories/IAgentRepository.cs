@@ -7,5 +7,7 @@ namespace SupportDesk.Domain.Repositories;
 /// </summary>
 public interface IAgentRepository
 {
+    Task<Agent?> GetByEmailAsync(string normalizedEmail, CancellationToken ct);
+
     Task<Agent?> GetByIdAsync(int id, CancellationToken ct);
 }

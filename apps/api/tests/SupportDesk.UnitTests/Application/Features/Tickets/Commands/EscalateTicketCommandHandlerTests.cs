@@ -17,9 +17,12 @@ public sealed class EscalateTicketCommandHandlerTests
     private readonly TicketCommandTestContext _context = new();
     private readonly Mock<IEscalationStore> _history = new();
     private TicketEscalation? _recorded;
+    private readonly Mock<ICurrentAgent> _current = new();
 
     private EscalateTicketCommandHandler Handler()
     {
+        _current.SetupGet(a => a.AgentId).Returns(4);
+        _current.SetupGet(a => a.AuditActor).Returns("agent:4");
         _history.Setup(h => h.AddAsync(It.IsAny<TicketEscalation>(), It.IsAny<CancellationToken>()))
             .Callback<TicketEscalation, CancellationToken>((row, _) => _recorded = row).Returns(Task.CompletedTask);
         _history.Setup(h => h.GetForTicketAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -28,7 +31,7 @@ public sealed class EscalateTicketCommandHandlerTests
                 _recorded.Reason, _recorded.EscalatedBy, _recorded.EscalatedAtUtc) });
         return new(_context.Tickets.Object, _context.Customers.Object, _context.Categories.Object,
             new TicketTriageService(_context.Assignments.Object, new SlaPolicy()), _history.Object,
-            _context.UnitOfWork.Object, _context.Clock, new GetTicketQueryHandler(_context.TicketQueries.Object));
+            _context.UnitOfWork.Object, _context.Clock, new GetTicketQueryHandler(_context.TicketQueries.Object), _current.Object);
     }
 
     [Theory]
@@ -43,7 +46,7 @@ public sealed class EscalateTicketCommandHandlerTests
         _context.Clock.Advance(TimeSpan.FromHours(5));
         _context.Assignments.Setup(a => a.GetCandidatesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new AssignmentCandidate(1, "Less busy", true, 10, 0, true), new AssignmentCandidate(4, "Current", true, 6, 2, true) });
-        var response = await Handler().HandleAsync(ticket.Id, new("  Customer impact increased  ", "  Lead  "), default);
+        var response = await Handler().HandleAsync(ticket.Id, new("  Customer impact increased  "), default);
         Assert.Equal(to, ticket.Priority);
         Assert.Equal(_context.Clock.UtcNow.AddHours(hours), ticket.DueAtUtc);
         Assert.Equal(_context.Clock.UtcNow, ticket.SlaStartedAtUtc);
@@ -56,7 +59,7 @@ public sealed class EscalateTicketCommandHandlerTests
         Assert.Equal(oldDue, _recorded.FromDueAtUtc);
         Assert.Equal(ticket.DueAtUtc, _recorded.ToDueAtUtc);
         Assert.Equal("Customer impact increased", _recorded.Reason);
-        Assert.Equal("Lead", _recorded.EscalatedBy);
+        Assert.Equal("agent:4", _recorded.EscalatedBy);
         Assert.Equal(_context.Clock.UtcNow, response.Escalation.EscalatedAtUtc);
         _context.VerifySaved(Times.Once());
         _history.Verify(h => h.AddAsync(It.IsAny<TicketEscalation>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -73,7 +76,7 @@ public sealed class EscalateTicketCommandHandlerTests
             .ReturnsAsync(new Category("Specialist flag", true, false));
         _context.Assignments.Setup(a => a.GetCandidatesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { new AssignmentCandidate(4, "Old", active, 6, open, specialist), new AssignmentCandidate(2, "Next", true, 8, 3, true) });
-        await Handler().HandleAsync(ticket.Id, new("Needs escalation", "Lead"), default);
+        await Handler().HandleAsync(ticket.Id, new("Needs escalation"), default);
         Assert.Equal(2, ticket.AssignedAgentId);
         Assert.Equal(4, _recorded!.FromAgentId);
         Assert.Equal(2, _recorded.ToAgentId);
@@ -83,7 +86,7 @@ public sealed class EscalateTicketCommandHandlerTests
     public async Task NoCandidateStillEscalatesAndRecordsUnassignment()
     {
         var ticket = _context.ExistingTicket(new TicketBuilder().AssignedTo(4).Build());
-        var result = await Handler().HandleAsync(ticket.Id, new("Needs escalation", "Lead"), default);
+        var result = await Handler().HandleAsync(ticket.Id, new("Needs escalation"), default);
         Assert.Null(ticket.AssignedAgentId);
         Assert.Null(_recorded!.ToAgentId);
         Assert.Contains("Unassigned because", result.Ticket.Triage!.AssignmentReason);
@@ -98,7 +101,7 @@ public sealed class EscalateTicketCommandHandlerTests
         var ticket = _context.ExistingTicket(new TicketBuilder().WithPriority(priority).WithStatus(status).Build());
         var version = ticket.Version;
         var exception = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            Handler().HandleAsync(ticket.Id, new("Needs escalation", "Lead"), default));
+            Handler().HandleAsync(ticket.Id, new("Needs escalation"), default));
         Assert.Contains(message, exception.Message);
         Assert.Equal(priority, ticket.Priority);
         Assert.Equal(version, ticket.Version);
@@ -107,13 +110,12 @@ public sealed class EscalateTicketCommandHandlerTests
     }
 
     [Theory]
-    [InlineData("", "Lead")]
-    [InlineData("    ", "Lead")]
-    [InlineData("four", "Lead")]
-    [InlineData("Valid reason", " ")]
-    public async Task InvalidInputNeverLoadsOrSaves(string reason, string actor)
+    [InlineData("")]
+    [InlineData("    ")]
+    [InlineData("four")]
+    public async Task InvalidInputNeverLoadsOrSaves(string reason)
     {
-        await Assert.ThrowsAsync<ValidationException>(() => Handler().HandleAsync(1, new(reason, actor), default));
+        await Assert.ThrowsAsync<ValidationException>(() => Handler().HandleAsync(1, new(reason), default));
         _context.Tickets.Verify(t => t.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         _context.VerifySaved(Times.Never());
     }
@@ -124,15 +126,14 @@ public sealed class EscalateTicketCommandHandlerTests
     [InlineData(501, false)]
     public async Task ValidatorChecksExactTrimmedLengths(int length, bool valid)
     {
-        var result = await new EscalateTicketRequestValidator().ValidateAsync(new EscalateTicketRequest(" " + new string('x', length) + " ", "Lead"));
+        var result = await new EscalateTicketRequestValidator().ValidateAsync(new EscalateTicketRequest(" " + new string('x', length) + " "));
         Assert.Equal(valid, result.IsValid);
-        Assert.False((await new EscalateTicketRequestValidator().ValidateAsync(new EscalateTicketRequest("Valid reason", new string('x', 101)))).IsValid);
     }
 
     [Fact]
     public async Task MissingTicketIsNotFound()
     {
-        await Assert.ThrowsAsync<NotFoundException>(() => Handler().HandleAsync(999, new("Needs escalation", "Lead"), default));
+        await Assert.ThrowsAsync<NotFoundException>(() => Handler().HandleAsync(999, new("Needs escalation"), default));
         _context.VerifySaved(Times.Never());
     }
 }

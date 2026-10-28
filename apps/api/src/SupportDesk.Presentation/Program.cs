@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
+using Microsoft.OpenApi;
 using SupportDesk.Application;
 using SupportDesk.Infrastructure;
+using SupportDesk.Presentation.Authentication;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
 using SupportDesk.Presentation.Middleware;
@@ -25,10 +27,25 @@ builder.Services.AddCors(options => options.AddPolicy(
         .AllowAnyMethod()));
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.OperationFilter<AnonymousOperationFilter>();
+    options.AddSecurityDefinition("bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Sign in at /api/auth/login and paste the returned token."
+    });
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("bearer", document)] = []
+    });
+});
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddAgentAuthentication(builder.Configuration);
 
 var sla = builder.Configuration.GetSection("Sla").Get<SupportDesk.Domain.Aggregates.Tickets.SlaPolicy>()
     ?? new SupportDesk.Domain.Aggregates.Tickets.SlaPolicy();
@@ -49,6 +66,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(FrontendCorsPolicy);
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

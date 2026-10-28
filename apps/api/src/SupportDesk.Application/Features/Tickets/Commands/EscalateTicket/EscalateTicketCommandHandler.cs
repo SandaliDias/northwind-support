@@ -8,7 +8,7 @@ namespace SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 
 public sealed class EscalateTicketCommandHandler(ITicketRepository tickets,
     ICustomerRepository customers, ICategoryRepository categories, TicketTriageService triage,
-    IEscalationStore history, IUnitOfWork unitOfWork, IClock clock, GetTicketQueryHandler getTicket)
+    IEscalationStore history, IUnitOfWork unitOfWork, IClock clock, GetTicketQueryHandler getTicket, ICurrentAgent currentAgent)
 {
     public async Task<EscalateTicketResponse> HandleAsync(int id, EscalateTicketRequest request, CancellationToken ct)
     {
@@ -29,7 +29,7 @@ public sealed class EscalateTicketCommandHandler(ITicketRepository tickets,
         var now = clock.UtcNow;
         var decision = await triage.DecideAsync(category, customer, ticket.Priority + 1, now, ct,
             ticket.AssignedAgentId, escalation: true);
-        var escalation = ticket.Escalate(decision.DueAtUtc, decision.AgentId, request.Reason, request.EscalatedBy, now);
+        var escalation = ticket.Escalate(decision.DueAtUtc, decision.AgentId, request.Reason, currentAgent.AuditActor, now);
         await history.AddAsync(escalation, ct);
         // EF commits the ticket update and audit insert in one transaction, with a concurrency check.
         await unitOfWork.SaveChangesAsync(ct);
