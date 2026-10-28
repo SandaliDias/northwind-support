@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => {
       setupFiles: './src/test/setup.ts',
       css: false,
       fileParallelism: false,
+      // A single thread worker is reliable on constrained Windows assessment machines.
+      pool: 'threads',
+      maxWorkers: 1,
     },
   };
 });

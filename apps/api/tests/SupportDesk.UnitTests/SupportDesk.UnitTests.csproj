@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/SupportDesk.Application/SupportDesk.Application.csproj" />
+    <!-- Ensure the real API host is built before opt-in HTTP integration tests. -->
+    <ProjectReference Include="../../src/SupportDesk.Presentation/SupportDesk.Presentation.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../src/SupportDesk.Domain/SupportDesk.Domain.csproj" />
     <ProjectReference Include="../../src/SupportDesk.Infrastructure/SupportDesk.Infrastructure.csproj" />
   </ItemGroup>

@@ -83,7 +83,7 @@ describe('useTicketList', () => {
 
     await act(async () => {
       // Simulate Task 2 SLA status filter being updated
-      result.current.updateFilters({ slaStatus: 'AtRisk' } as Record<string, unknown>);
+      result.current.updateFilters({ slaStatus: 'AtRisk' });
     });
 
     expect(getTickets).toHaveBeenCalledTimes(2);

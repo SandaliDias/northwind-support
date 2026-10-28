@@ -29,6 +29,7 @@ public sealed class TicketQueriesTests : IDisposable
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
+        SqliteSlaFunction.Register(_connection);
 
         var options = new DbContextOptionsBuilder<SupportDbContext>()
             .UseSqlite(_connection)
@@ -130,8 +131,8 @@ public sealed class TicketQueriesTests : IDisposable
     public async Task GetPagedAsync_WithSearchOnCustomerName_ReturnsMatchingTickets()
     {
         // Arrange
-        var t1 = CreateTicket("TCK-0001", "Ticket for Contoso", _customer1.Id, _category1.Id, TicketPriority.Medium);
-        var t2 = CreateTicket("TCK-0002", "Ticket for Northwind", _customer2.Id, _category2.Id, TicketPriority.Medium);
+        var t1 = CreateTicket("TCK-0001", "A printer stopped working", _customer1.Id, _category1.Id, TicketPriority.Medium);
+        var t2 = CreateTicket("TCK-0002", "A monitor is flickering", _customer2.Id, _category2.Id, TicketPriority.Medium);
 
         _db.AddRange(t1, t2);
         await _db.SaveChangesAsync();

@@ -65,6 +65,7 @@ export interface TicketListItem {
 }
 
 export interface TicketDetail {
+  triage?: TriageDecision | null;
   id: number;
   reference: string;
   title: string;
@@ -90,6 +91,7 @@ export interface TicketFilters {
   customerId?: number;
   assignedAgentId?: number;
   unassignedOnly?: boolean;
+  slaStatus?: SlaStatus;
   page: number;
   pageSize: number;
   sortBy: TicketSortField;
@@ -150,3 +152,25 @@ export interface ProblemDetails {
   traceId?: string;
   errors?: Record<string, string[]>;
 }
+
+export interface TriageDecision {
+  priorityReason: string;
+  slaWindowReason: string;
+  assignmentReason: string;
+}
+
+export interface TicketEscalation {
+  id: number;
+  fromPriority: TicketPriority;
+  toPriority: TicketPriority;
+  fromAgent: AgentSummary | null;
+  toAgent: AgentSummary | null;
+  fromDueAtUtc: string | null;
+  toDueAtUtc: string | null;
+  reason: string;
+  escalatedBy: string;
+  escalatedAtUtc: string;
+}
+
+export interface EscalateTicketPayload { reason: string; escalatedBy: string }
+export interface EscalateTicketResult { ticket: TicketDetail; escalation: TicketEscalation }
