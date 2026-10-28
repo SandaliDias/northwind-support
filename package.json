@@ -18,7 +18,8 @@
     "format:check": "dotnet format --verify-no-changes",
     "typecheck": "npm run typecheck --workspace apps/web",
     "ef": "dotnet tool restore && dotnet ef --project apps/api/src/SupportDesk.Infrastructure --startup-project apps/api/src/SupportDesk.Presentation",
-    "db:migrate": "dotnet tool restore && dotnet ef database update --project apps/api/src/SupportDesk.Infrastructure --startup-project apps/api/src/SupportDesk.Presentation"
+    "db:migrate": "dotnet tool restore && dotnet ef database update --project apps/api/src/SupportDesk.Infrastructure --startup-project apps/api/src/SupportDesk.Presentation",
+    "verify:docker": "node scripts/verify-task4.mjs"
   },
   "engines": {
     "node": ">=20"

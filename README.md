@@ -67,8 +67,8 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 
 **Verification:** Run `dotnet test --configuration Release`, `npm run test --workspace apps/web`, `npm run lint`,
 `npm run typecheck`, and `npm run build --workspace apps/web`. For real SQL/HTTP coverage, set
-`SUPPORTDESK_TEST_SQL` as shown in Tests section before dotnet test. The verified result was 77 backend tests (three SQL/HTTP tests included), four architecture/model
-checks, and 22 frontend tests. The three opt-in tests create only
+`SUPPORTDESK_TEST_SQL` as shown in Tests section before dotnet test. The Task 2 recorded result was 77 backend tests (three SQL/HTTP tests included), four architecture/model
+checks, and 22 frontend tests. The current seven opt-in tests create only
 unique SupportDesk_Task2_<guid> databases and remove them in finally blocks; the HTTP test starts
 and terminates only its own API process on an ephemeral loopback port. No existing application
 process or database is stopped/reset. Without that environment variable the tests are visibly
@@ -123,21 +123,82 @@ credentials.**
 
 **Local fixture login:** `alex.turner@northwind-support.example` / `Local_Only_Demo1!`.
 
+## Task 4: run the API in Docker
+
+With Docker Desktop running, set the JWT key using the command above (or fill `Jwt__SigningKey`
+in your ignored `.env`), then run from the repository root:
+
+```bash
+docker compose up --build
+```
+
+The API is at **http://localhost:5080**, Development Swagger at `/swagger`, and anonymous
+`GET /health` returns `Healthy` (200) when the database is reachable or `Unhealthy` (503) otherwise.
+All `/api` data routes still require a token: log in with the fixture above, then use Swagger's
+Authorize input or `Authorization: Bearer <token>`. A fresh volume receives migrations, six
+credentialed demo agents and 40 tickets. Existing data and password hashes are preserved.
+
+`apps/api/Dockerfile` restores the four-project API dependency graph before copying C# source,
+publishes with the .NET 10 SDK, then runs on the ASP.NET 10 runtime as `app` on HTTP 8080. No SDK,
+web app, appsettings files, source, environment file or development certificate is published.
+The build context is an API-only allowlist. Compose supplies configuration at runtime and waits
+for SQL Server's health check before starting the API; the image has no deployment credentials,
+JWT key or environment name. Non-secret policy defaults are also supplied through runtime settings.
+
+`.env.example` lists `MSSQL_SA_PASSWORD`, `SQLSERVER_PORT` (1433), `API_PORT` (5080), environment,
+JWT issuer/audience/lifetime/key and `Sla__...` options. Host `ConnectionStrings__Default` is for
+`dotnet run`; Compose constructs its own connection string using **sqlserver,1433**, never
+localhost. Ports bind to IPv4 loopback; host SQL settings use `127.0.0.1` to avoid IPv6 localhost
+resolution differences. An empty JWT key fails API startup clearly while SQL-only
+`npm run db:up` remains usable without a key.
+
+Run React locally against the container:
+
+```bash
+VITE_API_PROXY_TARGET=http://localhost:5080 npm run web
+```
+
+```powershell
+$env:VITE_API_PROXY_TARGET='http://localhost:5080'
+npm run web
+```
+
+**Verification:** `npm run verify:docker` runs [scripts/verify-task4.mjs](scripts/verify-task4.mjs).
+It requires Node 22, Docker-engine access and an available port 5080. It resets only a uniquely
+named disposable Compose project/volume, checks fresh startup and authenticated seed data,
+non-root execution, no runtime SDK/configuration/source/certificates, web proxy login/list/create/
+escalation, preserved data/history/hashes across restart, database health failure/recovery, and a
+cached restore after a temporary `.cs` change. It restores the source, removes its stack/key and
+writes logs/results under ignored `artifacts/task4-*`. It never prunes Docker or resets the
+existing development volume. `docker compose down -v` removes the selected project's database;
+use that command only for a disposable database.
+
+**Verification recorded:** the initial disposable run passed fresh migration
+(three migrations), 40 seeded tickets, six credentialed agents, anonymous health 200, protected
+tickets 401, runtime user `app` (UID 1654), no runtime SDK/configuration/source/certificates,
+Vite proxy login/list/create/escalation, and restart preservation of tickets/history/password
+hashes. The database-outage health request then timed out. The probe was changed to a fresh
+connection with a three-second connect timeout and no retries. Container outage/recovery, the
+final rebuilt image, source-change restore caching and measured runtime/SDK image sizes remain
+
 ## Tests
 
-Verified: **95 backend tests**, **4 architecture/model checks**, and **45 web tests**; all six
-SQL/HTTP tests were enabled for this result. Build, lint/type checks and formatting are checked
-separately.
+The final Task 4 source run passes **97 backend tests**, including all **seven SQL/HTTP tests**,
+and **four architecture/model checks**. This includes anonymous health 200/503 and the
+unreachable-server timeout/non-disclosure regression. Without SQL opt-in, 90 backend tests run
+and seven are skipped. The unchanged web suite's prior Task 3 run passed 45 tests. Scoped C#
+formatting, verifier syntax and Git whitespace checks passed. Container checks still pending
+are listed above.
 
 ```bash
 npm test                      # dotnet test, then the web tests (Vitest)
 ```
 
-The ordinary suites do not need a database. Six SQL Server/real HTTP integration tests are
+The ordinary suites do not need a database. Seven SQL Server/real HTTP integration tests are
 explicitly skipped unless `SUPPORTDESK_TEST_SQL` is set. In PowerShell, after `npm run db:up`:
 
 ```powershell
-$env:SUPPORTDESK_TEST_SQL='Server=localhost,1433;Database=master;User Id=sa;Password=Local_Dev_Password1;TrustServerCertificate=True;Encrypt=False'
+$env:SUPPORTDESK_TEST_SQL='Server=127.0.0.1,1433;Database=master;User Id=sa;Password=Local_Dev_Password1;TrustServerCertificate=True;Encrypt=False'
 dotnet test --configuration Release
 ```
 
@@ -159,6 +220,7 @@ Web tests use one thread worker to avoid fork startup timeouts on constrained Wi
 
 | Endpoint | Description |
 | --- | --- |
+| `GET /health` | Anonymous database reachability |
 | `POST /api/auth/login` | Anonymous email/password login; token, expiry and user |
 | `GET /api/auth/me` | Current authenticated agent |
 | `GET /api/tickets` | Paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `slaStatus`, `sortBy`, `sortDirection`; filters/count/sort/paging run in SQL. |
@@ -169,7 +231,7 @@ Web tests use one thread worker to avoid fork startup timeouts on constrained Wi
 | `PATCH /api/tickets/{id}/status` · `/assignment` | Change status / assignee |
 | `GET /api/customers` · `/api/agents` · `/api/categories` | Reference data |
 
-All data endpoints require a bearer token centrally. Login and Development Swagger stay open.
+All data endpoints require a bearer token centrally. Login, health and Development Swagger stay open.
 Errors are `ProblemDetails`: `400` validation, `401` authentication, `404` not found, `409` conflict.
 
 **Seed data:** 5 categories, 6 customers (3 Premium), 6 agents (one inactive, one at their limit)
@@ -187,4 +249,5 @@ and 40 historical tickets across statuses/priorities and timed SLA states; No SL
 
 ## Current limitations and AI use
 
-Task 4 API container and the optional SLA summary report are not implemented.
+Task 4 source is implemented; remaining container checks are listed above. The optional SLA summary
+report remains unimplemented.

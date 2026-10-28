@@ -44,6 +44,9 @@ public sealed class AuthenticationHttpTests
         await using var host = new AuthenticatedApiHost();
         await host.StartAsync();
         var client = host.Client;
+        var health = await client.GetAsync("/health");
+        Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+        Assert.Equal("Healthy", await health.Content.ReadAsStringAsync());
         var protectedGets = new[] { "/api/tickets", "/api/tickets/1", "/api/customers", "/api/customers/1",
             "/api/agents", "/api/categories", "/api/tickets/1/escalations", "/api/auth/me" };
         foreach (var path in protectedGets)
@@ -169,5 +172,16 @@ public sealed class AuthenticationHttpTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client.PostAsJsonAsync("/api/auth/login", new LoginRequest(Email, SupportDbSeeder.DevelopmentPassword))).StatusCode);
         host.Database.ChangeTracker.Clear();
         Assert.Null((await host.Database.Set<Agent>().SingleAsync()).PasswordHash);
+    }
+
+    [SqlServerFact]
+    public async Task AnonymousHealthReportsAnUnreachableDatabaseWithoutSecrets()
+    {
+        await using var host = new AuthenticatedApiHost();
+        // Production does not create/migrate the unique database, so it remains unreachable.
+        await host.StartAsync("Production");
+        var response = await host.Client.GetAsync("/health");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("Unhealthy", await response.Content.ReadAsStringAsync());
     }
 }

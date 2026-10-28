@@ -317,8 +317,77 @@ and [Swashbuckle bearer configuration](https://github.com/domaindrivendev/Swashb
 were consulted; generated code was checked with compilation, architecture tests and real request
 behavior rather than accepted on appearance.
 
-## Task 4
+## Task 4: API container and readiness
 
-The API container, anonymous database-health endpoint and container verification remain pending.
-Task 3 introduces no baked-in JWT secret; Task 4 must pass the key and connection/environment
-settings at runtime and explicitly exempt health from the fallback policy.
+The Dockerfile uses .NET 10 SDK restore/publish stages and the ASP.NET 10 runtime as user app,
+serving HTTP 8080. Restore copies global.json, Directory.Build.props, Directory.Packages.props
+and all four referenced API csproj files before any source; only the API dependency graph is
+restored, so excluded test/web projects do not break solution-level restore. Source changes
+therefore leave the expensive restore layer reusable. Publish disables apphost/debug symbols
+and excludes appsettings via a ContainerBuild-only project item, preserving normal host setup.
+
+The context defaults to deny and permits only shared build inputs/API source, then explicitly
+excludes generated output, node dependencies, web/tests, all appsettings/env/local secret files
+and certificates. The runtime stage copies only published output; no SDK or deployment settings
+are added. Compose supplies environment name, connection string, JWT and SLA values at runtime,
+so even the Development localhost database fixture never enters the image. The API reaches SQL
+by service DNS; host dotnet-run configuration is deliberately not reused in a container.
+
+A fixed SQL container_name was removed to allow independent Compose projects. The default
+project keeps its existing named volume; changing the container name never requires deleting
+that volume. API 5080 and configurable SQL host ports bind to loopback. SQL's existing sqlcmd
+probe controls the API's service_healthy dependency. JWT startup validation is retained: a blank
+key fails clearly, but Compose does not reject SQL-only db:up just because the API key is unset.
+
+The anonymous health route is an explicit exception to the existing fallback authorization
+policy in the composition root. The first implementation reused EF CanConnectAsync and the
+application retry policy; the real container outage test exceeded its twelve-second request
+limit. The revised check opens a fresh SqlClient connection, with pooling disabled, a three-second
+connect timeout and ConnectRetryCount zero, under the registered five-second cancellation token.
+This isolates readiness from normal command retries and avoids treating an old pooled connection
+as proof of current reachability. It returns only Healthy/Unhealthy, with no exception attached.
+A local unreachable-port regression checks failure without waiting for the application's long
+connection timeout; real HTTP tests cover reachable and missing databases. It measures
+reachability rather than schema or seed correctness. No extra package or curl installation is
+needed. The runtime image is not assumed to contain HTTP CLI tools.
+
+The repeatable Node verification script generates its own project/volume, ephemeral signing key
+and alternate SQL port, checks that every configured volume belongs to that project, and scopes
+all down -v operations to it. No user volumes/images/cache are pruned. It exercises the exact
+Compose stack, authenticated data, non-root execution, runtime contents, npm run web proxy,
+restart persistence, database outage/recovery and a source-change restore-cache check. Temporary
+source bytes are restored exactly, and the image is rebuilt to match the restored checkout.
+Ephemeral keys are removed and never printed; non-secret evidence is saved under ignored
+artifacts/task4-* directories. Docker must have sufficient free disk/RAM and engine access.
+
+Startup migration/fixture seeding remains Development-only. Production should run reviewed
+scripts/bundles once under a separate schema-capable identity, then use an API account without
+DDL rights. Multiple API instances should not compete to migrate, and Production must not
+provision known demo credentials. Production image hardening would pin approved digests, review
+packages/configuration, and handle TLS at the deployment edge. Kubernetes, registry publication,
+CI/CD, React containers, certificate/vault infrastructure and multi-architecture builds were
+not introduced.
+
+Verification status: after host disk space was freed and Docker restarted,
+the first disposable run built the image, applied all three migrations, seeded 40 tickets/six
+credentialed agents, returned anonymous health 200 and protected-list 401, and passed authenticated
+listing. whoami was app, UID 1654; the runtime had no SDK/appsettings/source/certificates or
+image-level deployment environment. The exact npm run web command with the localhost:5080 proxy
+passed login/list/create/escalate, and API restart preserved tickets, history and password hashes.
+The database-outage check timed out, leading to the probe change described above. That changed
+probe still requires a rebuilt-container outage/recovery check. The requested Docker rerun was
+declined; no workaround was used. Restore-cache proof and measured image sizes also remain
+pending. Partial evidence is artifacts/task4-XJ8uhC/result.json; the disposable project and its
+volume/key were removed. No existing application database volume was deleted. Host SQL settings
+use explicit 127.0.0.1 because localhost resolved to an unbound IPv6 address in the Windows SQL
+client; the same suite connected successfully over IPv4. The final source run passed 97 backend
+tests (all seven SQL/HTTP tests enabled) and four architecture/model checks. This includes the
+unreachable-server timeout/non-disclosure regression and real anonymous HTTP 200/503 responses.
+Scoped C# formatting, Node syntax and Git whitespace checks passed. Web source was unchanged;
+its prior Task 3 run passed 45 tests. An overlapping local test invocation hit a DLL lock; the
+final run was performed sequentially after the earlier process exited.
+
+References consulted: [.NET containers](https://learn.microsoft.com/en-us/dotnet/core/docker/),
+[Compose startup order](https://docs.docker.com/compose/how-tos/startup-order), and
+[ASP.NET health checks](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks?view=aspnetcore-10.0), and
+[SqlClient connection options](https://learn.microsoft.com/en-us/sql/connect/ado-net/connection-options).

@@ -1,15 +1,13 @@
-# SQL Server for local development only. The password below is a throwaway local
-# placeholder - never commit a real credential.
+# Local development/assessment stack. The API receives configuration only at runtime.
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: supportdesk-sql
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Local_Dev_Password1}"
       MSSQL_PID: Developer
     ports:
-      - "1433:1433"
+      - "127.0.0.1:${SQLSERVER_PORT:-1433}:1433"
     volumes:
       - supportdesk-sql:/var/opt/mssql
     healthcheck:
@@ -22,6 +20,34 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+
+  api:
+    image: northwind-support-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Development}"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      # Host dotnet run uses loopback; containers reach SQL by the service's DNS name.
+      ConnectionStrings__Default: "Server=sqlserver,1433;Database=SupportDesk;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Local_Dev_Password1};TrustServerCertificate=True;Encrypt=False"
+      # Empty keys fail clearly in API startup validation; SQL-only db:up still works without a key.
+      Jwt__SigningKey: "${Jwt__SigningKey:-}"
+      Jwt__Issuer: "${Jwt__Issuer:-Northwind.SupportDesk}"
+      Jwt__Audience: "${Jwt__Audience:-Northwind.SupportDesk.Web}"
+      Jwt__TokenLifetimeMinutes: "${Jwt__TokenLifetimeMinutes:-60}"
+      Sla__BaseWindowHours__Critical: "${Sla__BaseWindowHours__Critical:-4}"
+      Sla__BaseWindowHours__High: "${Sla__BaseWindowHours__High:-8}"
+      Sla__BaseWindowHours__Medium: "${Sla__BaseWindowHours__Medium:-24}"
+      Sla__BaseWindowHours__Low: "${Sla__BaseWindowHours__Low:-72}"
+      Sla__PremiumCustomerMultiplier: "${Sla__PremiumCustomerMultiplier:-0.5}"
+      Sla__MinimumWindowHours: "${Sla__MinimumWindowHours:-1}"
+      Sla__AtRiskThresholdPercent: "${Sla__AtRiskThresholdPercent:-25}"
+    ports:
+      - "127.0.0.1:${API_PORT:-5080}:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
 
 volumes:
   supportdesk-sql:
