@@ -49,6 +49,20 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 
 ---
 
+## Server-side filtering (Task 1.2)
+
+- **Where applied:** Filtering is implemented directly in `SupportDesk.Infrastructure.Queries.TicketQueries.ApplyFilters`. It operates on the `IQueryable<TicketWithLabels>` query before `CountAsync` and pagination (`Skip`/`Take`), guaranteeing that all counts, total pages, and retrieved records are filtered entirely in SQL by EF Core without in-memory C# evaluation.
+- **Supported filters:**
+  - `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`: exact matches on the corresponding aggregate fields.
+  - `unassignedOnly`: when `true`, filters records where `AssignedAgentId == null`.
+  - `search`: trimmed substring match across ticket `Title`, `Reference` (e.g. `TCK-0042`), or `Customer.Name`. Blank/whitespace-only input is ignored.
+  - Combination: all active filters compose with `AND`.
+- **How the next filter is added (Task 2 `slaStatus`):**
+  - Extend `TicketQuery` with the new filter property.
+  - Add one conditional `.Where(...)` clause inside `ApplyFilters`. The underlying query joins, sorting, and pagination logic remain unchanged.
+
+---
+
 ## Quick start
 
 **Prerequisites:** .NET SDK 10 (`global.json`), Node.js 22 (`.nvmrc`; 20.19+ works), Docker.
