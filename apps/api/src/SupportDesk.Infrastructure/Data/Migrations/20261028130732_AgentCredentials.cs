@@ -1,0 +1,32 @@
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace SupportDesk.Infrastructure.Data.Migrations
+{
+    /// <inheritdoc />
+    public partial class AgentCredentials : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<string>(
+                name: "PasswordHash",
+                table: "Agents",
+                type: "nvarchar(512)",
+                maxLength: 512,
+                nullable: true);
+
+            // Canonicalize legacy addresses to the same form used by all new agents and login lookups.
+            migrationBuilder.Sql("UPDATE [Agents] SET [Email] = LOWER(LTRIM(RTRIM([Email])));");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "PasswordHash",
+                table: "Agents");
+        }
+    }
+}

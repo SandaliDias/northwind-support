@@ -17,14 +17,26 @@ namespace SupportDesk.Infrastructure.Data;
 /// Aggregates are built through their own behaviour, retaining historical priorities/windows.
 /// Only the historical last-update timestamp is set through EF Core directly.
 /// </remarks>
-public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger)
+public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger, IPasswordService? passwords = null)
 {
-    /// <summary>Seeds the database, unless it already has tickets in it.</summary>
+    public const string DevelopmentPassword = "Local_Only_Demo1!";
+    private readonly IPasswordService _passwords = passwords ?? new Services.IdentityPasswordService();
+
+    private async Task SeedMissingCredentialsAsync(CancellationToken ct)
+    {
+        var emails = SeedAgents(clock.UtcNow).Select(a => a.Email).ToArray();
+        var missing = await db.Set<Agent>().Where(a => emails.Contains(a.Email) && a.PasswordHash == null).ToListAsync(ct);
+        foreach (var agent in missing) agent.SetPasswordHash(_passwords.Hash(agent, DevelopmentPassword));
+        if (missing.Count > 0) await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Development-only fixture seeding; the host only invokes it in Development.</summary>
     public async Task SeedAsync(CancellationToken ct = default)
     {
         if (await db.Set<Ticket>().AnyAsync(ct))
         {
-            logger.LogInformation("Seed data already present; skipping.");
+            await SeedMissingCredentialsAsync(ct);
+            logger.LogInformation("Seed data already present; missing demo credentials checked.");
             return;
         }
 
@@ -42,6 +54,7 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
         SeedSpecializations(agents, categories);
         await db.SaveChangesAsync(ct);
 
+        await SeedMissingCredentialsAsync(ct);
         SeedTickets(now, customers, categories, agents);
         await db.SaveChangesAsync(ct);
 

@@ -1,13 +1,17 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using SupportDesk.Application.Contracts.Auth;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Domain.Aggregates.Tickets;
+using SupportDesk.Infrastructure.Data;
 
 namespace SupportDesk.UnitTests.Infrastructure;
 
@@ -37,7 +41,13 @@ public sealed class Task2HttpTests
             RedirectStandardError = true
         };
         info.ArgumentList.Add(dll);
+        // Restricted Windows test users cannot write the system Event Log; keep test diagnostics on the console.
+        info.Environment["Logging__EventLog__LogLevel__Default"] = "None";
+        info.Environment["Jwt__Issuer"] = "Northwind.SupportDesk";
+        info.Environment["Jwt__Audience"] = "Northwind.SupportDesk.Web";
+        info.Environment["Jwt__TokenLifetimeMinutes"] = "60";
         info.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+        info.Environment["Jwt__SigningKey"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
         info.Environment["ASPNETCORE_URLS"] = $"http://127.0.0.1:{port}";
         info.Environment["ConnectionStrings__Default"] = db.Database.GetConnectionString()!;
         using var process = Process.Start(info)!;
@@ -52,13 +62,17 @@ public sealed class Task2HttpTests
             for (var i = 0; i < 100; i++)
             {
                 if (process.HasExited) break;
-                try { using var probe = await client.GetAsync("/api/categories"); ready = probe.IsSuccessStatusCode; }
+                try { using var probe = await client.GetAsync("/swagger/v1/swagger.json"); ready = probe.IsSuccessStatusCode; }
                 catch (HttpRequestException) { }
                 catch (TaskCanceledException) { }
                 if (ready) break;
                 await Task.Delay(200);
             }
             Assert.True(ready, process.HasExited ? await stderr + await stdout : "API did not become ready.");
+            var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest("alex.turner@northwind-support.example", SupportDbSeeder.DevelopmentPassword));
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+            var session = (await login.Content.ReadFromJsonAsync<LoginResponse>(json))!;
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.Token);
             var customer = 1;
             // Seed category 5 is flagged Critical and specialist-only: Priya, not full Marcus.
             var createdResponse = await client.PostAsJsonAsync("/api/tickets", new CreateTicketRequest(
@@ -70,7 +84,7 @@ public sealed class Task2HttpTests
             Assert.Equal(created.CreatedAtUtc.AddHours(2), created.DueAtUtc);
             Assert.NotNull(created.Triage);
             Assert.NotNull(createdResponse.Headers.Location);
-            var conflict = await client.PostAsJsonAsync($"/api/tickets/{created.Id}/escalate", new EscalateTicketRequest("More impact", "Lead"));
+            var conflict = await client.PostAsJsonAsync($"/api/tickets/{created.Id}/escalate", new EscalateTicketRequest("More impact"));
             Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
             Assert.Contains("Critical", await conflict.Content.ReadAsStringAsync());
             var normalResponse = await client.PostAsJsonAsync("/api/tickets", new CreateTicketRequest(
@@ -78,14 +92,14 @@ public sealed class Task2HttpTests
             var normal = (await normalResponse.Content.ReadFromJsonAsync<TicketDetailDto>(json))!;
             Assert.Equal("Sara Lindqvist", normal.AssignedAgent!.FullName);
             var path = $"/api/tickets/{normal.Id}/escalate";
-            foreach (var invalid in new[] { new EscalateTicketRequest("four", "Lead"), new EscalateTicketRequest("Valid reason", " ") })
+            foreach (var invalid in new[] { new EscalateTicketRequest("four"), new EscalateTicketRequest("    ") })
             {
                 Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync(path, invalid)).StatusCode);
             }
-            Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsJsonAsync("/api/tickets/999999/escalate", new EscalateTicketRequest("More impact", "Lead"))).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsJsonAsync("/api/tickets/999999/escalate", new EscalateTicketRequest("More impact"))).StatusCode);
             Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/tickets/999999/escalations")).StatusCode);
             Assert.Empty((await client.GetFromJsonAsync<TicketEscalationDto[]>($"/api/tickets/{normal.Id}/escalations", json))!);
-            var escalationResponse = await client.PostAsJsonAsync(path, new EscalateTicketRequest("  Increased impact  ", "  Lead  "));
+            var escalationResponse = await client.PostAsJsonAsync(path, new EscalateTicketRequest("  Increased impact  "));
             Assert.Equal(HttpStatusCode.OK, escalationResponse.StatusCode);
             var result = (await escalationResponse.Content.ReadFromJsonAsync<EscalateTicketResponse>(json))!;
             Assert.Equal(TicketPriority.Medium, result.Ticket.Priority);
@@ -94,19 +108,22 @@ public sealed class Task2HttpTests
             var history = (await client.GetFromJsonAsync<TicketEscalationDto[]>($"/api/tickets/{normal.Id}/escalations", json))!;
             Assert.Single(history);
             Assert.Equal("Increased impact", history[0].Reason);
-            Assert.Equal("Lead", history[0].EscalatedBy);
+            Assert.Equal("agent:1", history[0].EscalatedBy);
             Assert.Equal(normal.DueAtUtc, history[0].FromDueAtUtc);
             Assert.Equal(result.Ticket.DueAtUtc, history[0].ToDueAtUtc);
             Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/tickets?slaStatus=999")).StatusCode);
             var resolved = await client.PatchAsJsonAsync($"/api/tickets/{normal.Id}/status", new UpdateTicketStatusRequest(TicketStatus.Resolved), json);
             Assert.Equal(HttpStatusCode.OK, resolved.StatusCode);
-            var resolvedConflict = await client.PostAsJsonAsync(path, new EscalateTicketRequest("More impact", "Lead"));
+            var resolvedConflict = await client.PostAsJsonAsync(path, new EscalateTicketRequest("More impact"));
             Assert.Equal(HttpStatusCode.Conflict, resolvedConflict.StatusCode);
             Assert.Contains("Resolved", await resolvedConflict.Content.ReadAsStringAsync());
             Assert.Single((await client.GetFromJsonAsync<TicketEscalationDto[]>($"/api/tickets/{normal.Id}/escalations", json))!);
-            await db.Set<SupportDesk.Domain.Aggregates.Agents.Agent>().ExecuteUpdateAsync(setters => setters.SetProperty(a => a.IsActive, false));
+            await db.Set<SupportDesk.Domain.Aggregates.Agents.Agent>().Where(a => a.Id != session.User.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(a => a.IsActive, false));
+            await db.Set<SupportDesk.Domain.Aggregates.Agents.Agent>().Where(a => a.Id == session.User.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(a => a.MaxOpenTickets, 5));
             var unassignedResponse = await client.PostAsJsonAsync("/api/tickets", new CreateTicketRequest(
-                "Nobody eligible verification", "All agents are inactive in this isolated test database.", customer, 1, null), json);
+                "Nobody eligible verification", "All eligible agents are inactive or full in this isolated test database.", customer, 1, null), json);
             Assert.Equal(HttpStatusCode.Created, unassignedResponse.StatusCode);
             var unassigned = (await unassignedResponse.Content.ReadFromJsonAsync<TicketDetailDto>(json))!;
             Assert.Null(unassigned.AssignedAgent);
@@ -122,7 +139,7 @@ public sealed class Task2HttpTests
                 for (var i = 0; i < 100; i++)
                 {
                     if (restarted.HasExited) break;
-                    try { using var probe = await client.GetAsync("/api/categories"); restartedReady = probe.IsSuccessStatusCode; }
+                    try { using var probe = await client.GetAsync("/swagger/v1/swagger.json"); restartedReady = probe.IsSuccessStatusCode; }
                     catch (HttpRequestException) { }
                     catch (TaskCanceledException) { }
                     if (restartedReady) break;

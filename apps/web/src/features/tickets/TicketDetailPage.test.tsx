@@ -25,7 +25,6 @@ async function submit() {
   </Routes></MemoryRouter>);
   await screen.findByRole('heading', { name: ticket.title });
   fireEvent.change(screen.getByLabelText('Reason'), { target: { value: entry.reason } });
-  fireEvent.change(screen.getByLabelText('Escalated by'), { target: { value: 'Lead' } });
   fireEvent.click(screen.getByRole('button', { name: 'Escalate' }));
 }
 

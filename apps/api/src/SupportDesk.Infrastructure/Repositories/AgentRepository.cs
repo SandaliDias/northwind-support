@@ -7,6 +7,9 @@ namespace SupportDesk.Infrastructure.Repositories;
 
 public sealed class AgentRepository(SupportDbContext db) : IAgentRepository
 {
+    public Task<Agent?> GetByEmailAsync(string normalizedEmail, CancellationToken ct) =>
+        db.Set<Agent>().FirstOrDefaultAsync(a => a.Email == normalizedEmail, ct);
+
     /// <summary>Loads the whole aggregate, specializations included.</summary>
     public Task<Agent?> GetByIdAsync(int id, CancellationToken ct) =>
         db.Set<Agent>()
