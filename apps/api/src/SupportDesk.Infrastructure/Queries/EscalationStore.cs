@@ -16,11 +16,14 @@ public sealed class EscalationStore(SupportDbContext db) : IEscalationStore
         await (from e in db.Set<TicketEscalation>().AsNoTracking()
                from before in db.Set<Agent>().Where(a => a.Id == e.FromAgentId).DefaultIfEmpty()
                from after in db.Set<Agent>().Where(a => a.Id == e.ToAgentId).DefaultIfEmpty()
+               join actor in db.Set<Agent>() on e.EscalatedBy equals "agent:" + actor.Id.ToString() into actors
+               from actor in actors.DefaultIfEmpty()
                where e.TicketId == ticketId
                orderby e.EscalatedAtUtc descending, e.Id descending
                select new TicketEscalationDto(e.Id, e.FromPriority, e.ToPriority,
                    before == null ? null : new AgentSummaryDto(before.Id, before.FullName),
                    after == null ? null : new AgentSummaryDto(after.Id, after.FullName),
-                   e.FromDueAtUtc, e.ToDueAtUtc, e.Reason, e.EscalatedBy, e.EscalatedAtUtc))
+                   e.FromDueAtUtc, e.ToDueAtUtc, e.Reason, e.EscalatedBy, e.EscalatedAtUtc,
+                   actor == null ? null : new AgentSummaryDto(actor.Id, actor.FullName)))
             .ToListAsync(ct);
 }

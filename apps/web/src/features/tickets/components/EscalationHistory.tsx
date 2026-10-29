@@ -10,7 +10,7 @@ export function EscalationHistory({ entries }: { entries: TicketEscalation[] }) 
         <p>Agent: {entry.fromAgent?.fullName ?? 'Unassigned'} → {entry.toAgent?.fullName ?? 'Unassigned'}</p>
         <p>Due: {formatDateTime(entry.fromDueAtUtc)} → {formatDateTime(entry.toDueAtUtc)}</p>
         <p>{entry.reason}</p>
-        <p>By {entry.escalatedBy} · {formatDateTime(entry.escalatedAtUtc)}</p>
+        <p>By {entry.escalatedByAgent?.fullName ?? entry.escalatedBy} · {formatDateTime(entry.escalatedAtUtc)}</p>
       </li>)}
     </ol>}
   </div>;

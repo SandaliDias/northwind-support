@@ -444,3 +444,28 @@ The report-specific run passed 20 tests; final whole-suite checks are recorded i
 Official [SQL Server EF function mappings](https://learn.microsoft.com/en-us/ef/core/providers/sql-server/functions)
 were checked for date arithmetic/rounding. Those mappings were then verified through executed
 SQL Server aggregation rather than relying on LINQ appearance or SQLite-only behavior.
+
+
+## Escalation actor display follow-up (29 October 2026)
+
+The history component rendered the audit string directly, so a real token-derived actor appeared
+as agent:1 rather than Alex Turner. Changing the immutable stored identity to a display name would
+weaken attribution; guessing from the assigned owner would attribute the action to the wrong person.
+The read projection now supplies optional EscalatedByAgent metadata through another left join in
+the existing history query, including inactive agents. UI uses its FullName, falling back to the
+original value for legacy labels, unavailable metadata or deleted actors. It is the current name,
+not a historical name snapshot. The underlying audit actor is unchanged; no migration is needed.
+The escalation response and subsequent history GET share the same projection. Tests cover actor
+versus assignee, active/inactive/missing/legacy resolution, raw identity preservation and real
+SQL/HTTP names derived from the authenticated user despite a spoofed request actor.
+The SLA summary remains an authenticated API/Swagger report, with no added dashboard page.
+
+Actor-display validation passed five backend cases (four SQLite identity/legacy/inactive/missing
+cases plus the real authenticated SQL/HTTP scenario), five targeted UI/detail cases, type checking,
+lint and a complete Release solution build with zero warnings/errors. The initial correlated
+lookup translated to APPLY, which SQLite cannot execute; regression tests caught this and the
+query was changed to an explicit LEFT JOIN. Both SQLite and SQL/HTTP cases then passed.
+The full test attempt was interrupted by sandbox compiler-pipe/test-host connection failures;
+it is not reported as a passing full suite. Compilation succeeded with shared compilation disabled,
+and the five focused backend cases ran outside the sandbox with explicit approval, using only
+their disposable database. The earlier 117/48 whole-suite counts belong to the report-stage run.

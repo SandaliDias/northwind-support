@@ -6,7 +6,7 @@ public sealed record TriageDto(string PriorityReason, string SlaWindowReason, st
 
 public sealed record TicketEscalationDto(int Id, TicketPriority FromPriority, TicketPriority ToPriority,
     AgentSummaryDto? FromAgent, AgentSummaryDto? ToAgent, DateTime? FromDueAtUtc, DateTime? ToDueAtUtc,
-    string Reason, string EscalatedBy, DateTime EscalatedAtUtc);
+    string Reason, string EscalatedBy, DateTime EscalatedAtUtc, AgentSummaryDto? EscalatedByAgent = null);
 
 public sealed record EscalateTicketRequest(string Reason);
 

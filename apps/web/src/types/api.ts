@@ -169,6 +169,8 @@ export interface TicketEscalation {
   toDueAtUtc: string | null;
   reason: string;
   escalatedBy: string;
+  /** Current display name for a token-derived actor; older servers may omit this. */
+  escalatedByAgent?: AgentSummary | null;
   escalatedAtUtc: string;
 }
 
