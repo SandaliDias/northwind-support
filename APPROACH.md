@@ -391,3 +391,56 @@ References consulted: [.NET containers](https://learn.microsoft.com/en-us/dotnet
 [Compose startup order](https://docs.docker.com/compose/how-tos/startup-order), and
 [ASP.NET health checks](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks?view=aspnetcore-10.0), and
 [SqlClient connection options](https://learn.microsoft.com/en-us/sql/connect/ado-net/connection-options).
+
+## Optional stretch: SLA summary report
+
+The stretch is a protected API read endpoint, following the existing query/handler structure.
+No frontend report screen, new table, stored summary, background job or migration was introduced.
+ISlaReportQueries is the application read seam; Infrastructure owns the EF/SQL expression, and the
+controller stays thin under the existing authenticated-user fallback policy.
+
+The specification leaves date cohort, rate units and empty/no-SLA behavior open. I chose required
+ISO 8601 timestamps with explicit offsets, normalised to UTC, and a creation-time [from,to) cohort.
+A half-open interval avoids end-of-day guesses and allows adjacent reports without double counting.
+Date-only/offsetless/invalid input, equal/reversed instants and unsupported grouping return the
+shared validation error format. Grouping is case-insensitive agent (default) or priority. Names
+are labels; agent ID is the identity, including current ownership by inactive agents. Unassigned
+is an explicit null-ID group. Empty cohorts return an empty array, not synthetic zero groups.
+
+The report is a current-state view of that creation cohort: it is not a historical as-at report
+and does not attribute a ticket to its owner at resolution. Counts reuse the exact mapped
+TicketSlaStatus function with one injected now and current configured threshold, so report and
+ticket lists share boundary rules. notApplicable is returned in addition to the requested four
+state counts, ensuring the components reconcile with total. Breach rate is a percentage of all
+tickets in the group, rounded to two decimal places; an SLA-only denominator was rejected because
+it would silently diverge from the requested total. The explicit no-SLA count makes that choice
+visible. Average resolution hours uses creation to resolution for every resolved ticket, even
+without an SLA, ignores unresolved tickets and is null if no ticket is resolved.
+
+The IQueryable creation-time filter, left join, GroupBy, conditional counts, SQL ROUND and AVG
+remain in one composed query with one final ToListAsync. No ticket entities or per-group rows
+are loaded before aggregation. Grouped DTO projection is untracked and excludes descriptions,
+credentials and unrelated entity data. An existing CreatedAtUtc index was not invented; adding a
+report-specific index should follow representative execution plans rather than a tiny fixture.
+
+A whole-duration DATEDIFF(millisecond) would overflow after approximately 24.8 days; DATEDIFF(second)
+also has a finite range. Instead elapsed time is whole day boundaries times 24 plus the difference
+between the two times of day in milliseconds divided by 3,600,000. Each millisecond difference
+stays within one day, while whole-day differences cover the SQL datetime2 range. This preserves
+the schema's millisecond precision, including cross-midnight fractional durations, without a new
+SQL function/migration. The real-provider test includes a century-long resolution to disprove
+an accidentally overflowing implementation.
+
+Tests validate bounds/offsets/grouping and prove invalid requests do not reach the read seam,
+plus UTC normalisation and cancellation forwarding. SQL tests create/drop only their unique
+database, cover both groupings, every state, inactive/unassigned owners, equal display names,
+from inclusion/to exclusion, empty results, null/fractional/long averages, changed now/threshold,
+rounding and count reconciliation. An interceptor asserts exactly one executed reader command
+per report with GROUP BY, AVG, counts and the mapped SLA function; the change tracker remains empty.
+Real HTTP tests prove 401 without a token, shared 400 validation, 200 with a token, 40 seeded
+tickets across both groupings, string priority JSON and offset URLs with an encoded plus.
+The report-specific run passed 20 tests; final whole-suite checks are recorded in README.
+
+Official [SQL Server EF function mappings](https://learn.microsoft.com/en-us/ef/core/providers/sql-server/functions)
+were checked for date arithmetic/rounding. Those mappings were then verified through executed
+SQL Server aggregation rather than relying on LINQ appearance or SQLite-only behavior.
