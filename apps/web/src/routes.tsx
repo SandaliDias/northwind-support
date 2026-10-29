@@ -8,6 +8,7 @@ import { CustomerListPage } from './features/customers/CustomerListPage';
 import { CreateTicketPage } from './features/tickets/CreateTicketPage';
 import { TicketDetailPage } from './features/tickets/TicketDetailPage';
 import { TicketListPage } from './features/tickets/TicketListPage';
+import { SlaSummaryPage } from './features/reports/SlaSummaryPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
           { path: 'tickets/:id', element: <TicketDetailPage /> },
           { path: 'customers', element: <CustomerListPage /> },
           { path: 'customers/:id', element: <CustomerDetailPage /> },
+          { path: 'reports/sla-summary', element: <SlaSummaryPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

@@ -13,7 +13,7 @@ Requires Docker Desktop, Node 22 (`.nvmrc`); .NET SDK 10 (`global.json`) is need
 From the repository root, in PowerShell:
 
 ```powershell
-cp .env.example .env          # optional, every value has a working default
+cp .env.example .env          # optional overrides; generate the signing key below
 npm ci
 $env:Jwt__SigningKey = node -e "process.stdout.write(require('node:crypto').randomBytes(48).toString('base64'))"
 docker compose up --build
@@ -145,6 +145,15 @@ Password changes alone do not revoke existing JWTs before expiry.
 
 ## Optional SLA summary
 
+Open **SLA summary** in the main navigation at `/reports/sla-summary`. Sign-in is required.
+Choose From/To UTC calendar dates and Agent or Priority, then **Generate report**. Both dates
+are included; the UI sends midnight after the end date as the API's exclusive upper bound.
+The table shows every SLA count, breach percentage and average resolution hours, including
+Unassigned and No SLA. No resolved tickets displays “No resolutions”; a zero-hour average remains
+0.00. Loading disables controls; validation, empty results and server errors/retry are explicit.
+Changing draft filters leaves the displayed report labelled with its actual submitted range.
+The table scrolls horizontally on small screens. Existing authentication/401 handling is reused.
+
 `GET /api/reports/sla-summary?from=2026-10-01T00:00:00Z&to=2026-11-01T00:00:00Z&groupBy=agent`
 requires a Bearer token. Both timestamps are required ISO 8601 instants with Z or an explicit
 offset (URL-encode `+` as `%2B`); offsets normalise to UTC. Creation cohort is `[from,to)`, with
@@ -162,8 +171,8 @@ total and are exposed separately so all counts reconcile. Average resolution hou
 creation-to-resolution across resolved/closed tickets, including no-SLA resolutions; unresolved
 tickets are ignored and no resolutions gives null. It measures elapsed UTC hours, not working
 hours or an as-at historical snapshot. Current SLA state uses one injected now/current threshold.
-One SQL command performs filtering, grouping, counts, percentage and average; no migration or
-frontend dashboard was needed. Day/time-of-day arithmetic avoids millisecond DATEDIFF overflow.
+One SQL command performs filtering, grouping, counts, percentage and average; no migration was
+needed. The UI displays these server metrics without recomputing them. Day/time-of-day arithmetic avoids millisecond DATEDIFF overflow.
 
 ## Docker and production
 
@@ -177,8 +186,11 @@ its fresh SQL connection has a three-second timeout, no retries and a five-secon
 
 `npm run verify:docker` resets only its own uniquely named disposable project/volume, exercises
 fresh seed/login/proxy/restart/outage, inspects user/contents, changes/restores one .cs file for
-cache proof, rebuilds original source and measures image bytes. It saves ignored. Never run unscoped `docker compose
-down -v` against data you need.
+cache proof, rebuilds original source and measures image bytes. It saves non-secret evidence under
+ignored `artifacts/task4-*` and removes its own stack/key. **Port 5080 may stay in use**: verification
+prefers it when free, otherwise chooses a free API port and routes its own web proxy to that port.
+SQL uses a separate free port. The normal app's default remains 5080. Run `npm run test:docker-verifier`
+for the occupied-port regression. Never run unscoped `docker compose down -v` against data you need.
 
 ## Verification, limitations and AI use
 
@@ -201,11 +213,14 @@ processes. Normal suites do not require SQL. Optional-report tests verify all me
 bounds/offsets, both groupings, empty/null cases, changed clock/threshold, long fractional
 durations, shared validation/auth and one executed SQL GROUP BY/AVG/count command per report.
 Full backend run: **117 passed**, including all **nine SQL/HTTP tests**, plus **four architecture
-checks**. The report-specific run passed 20 tests. **48 web tests**, type checking, linting and
+checks**. The report-specific run passed 20 tests. The latest report-UI run passed **65 web tests**, including
+real client serialization/auth, dates, grouping/metrics, pending/empty/error/retry/cancellation and
+protected return navigation. Three verifier port tests, type checking, linting and
 the web production build passed. Full C# formatting (no-restore after a successful restore)
 and Git whitespace checks passed. Without SQL opt-in, 108 backend tests run and nine skip.
 
-No load test, browser visual audit, fresh-clone rehearsal or production deployment is claimed.
+No load test, fresh-clone rehearsal or
+production deployment is claimed.
 Capacity selection/reference generation can race across concurrent requests; a single-ticket
 concurrency token does not serialise global capacity. At scale review plans, a CreatedAtUtc
 report index, substring search and keyset paging; no unmeasured performance promise is made.
@@ -216,7 +231,7 @@ deployment infrastructure were deliberately excluded.
 Codex was used selectively, with clear guidance, for code tracing, implementation support, test generation, and documentation. Its outputs were reviewed and validated, with decisions and final changes guided by my own understanding and judgment. Useful workflow
 was pure rules first, then compilation and real SQL/HTTP checks; the existing SlaCell was reused.
 A separate Identity schema and in-memory SLA aggregation were rejected. Tests caught malformed
-session storage not being cleared and the original container health Thetimeout; fixes were tested.
+session storage not being cleared and the original container health timeout; fixes were tested.
 The report rejected a whole-duration millisecond DATEDIFF because it overflows on long tickets,
 then proved the alternative against SQL Server. Generated code was reviewed, formatted and tested;
 detailed choices and verification limits are recorded in APPROACH.md.

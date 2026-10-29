@@ -180,3 +180,20 @@ export interface EscalateTicketResult { ticket: TicketDetail; escalation: Ticket
 export interface AuthUser { id: number; fullName: string; email: string }
 export interface LoginPayload { email: string; password: string }
 export interface LoginResult { token: string; expiresAtUtc: string; user: AuthUser }
+
+export type SlaSummaryGrouping = 'agent' | 'priority';
+export interface SlaSummaryQuery { from: string; to: string; groupBy: SlaSummaryGrouping }
+export interface SlaSummaryGroup {
+  agentId: number | null;
+  agentName: string | null;
+  priority: TicketPriority | null;
+  total: number;
+  breached: number;
+  atRisk: number;
+  within: number;
+  met: number;
+  notApplicable: number;
+  /** Percentage in [0, 100], already calculated by the API. */
+  breachRate: number;
+  averageResolutionHours: number | null;
+}

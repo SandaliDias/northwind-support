@@ -451,3 +451,16 @@ textarea[aria-invalid='true'] {
   max-width: 28rem;
   margin: 0 auto;
 }
+
+.report-controls {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.sla-report-table td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

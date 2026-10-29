@@ -19,7 +19,8 @@
     "typecheck": "npm run typecheck --workspace apps/web",
     "ef": "dotnet tool restore && dotnet ef --project apps/api/src/SupportDesk.Infrastructure --startup-project apps/api/src/SupportDesk.Presentation",
     "db:migrate": "dotnet tool restore && dotnet ef database update --project apps/api/src/SupportDesk.Infrastructure --startup-project apps/api/src/SupportDesk.Presentation",
-    "verify:docker": "node scripts/verify-task4.mjs"
+    "verify:docker": "node scripts/verify-task4.mjs",
+    "test:docker-verifier": "node --test scripts/verification-ports.test.mjs"
   },
   "engines": {
     "node": ">=20"

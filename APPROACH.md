@@ -394,8 +394,7 @@ References consulted: [.NET containers](https://learn.microsoft.com/en-us/dotnet
 
 ## Optional stretch: SLA summary report
 
-The stretch is a protected API read endpoint, following the existing query/handler structure.
-No frontend report screen, new table, stored summary, background job or migration was introduced.
+The stretch is a protected API read endpoint, following the existing query/handler structure, and a UI dashboard to display the generate summary
 ISlaReportQueries is the application read seam; Infrastructure owns the EF/SQL expression, and the
 controller stays thin under the existing authenticated-user fallback policy.
 
@@ -458,7 +457,6 @@ not a historical name snapshot. The underlying audit actor is unchanged; no migr
 The escalation response and subsequent history GET share the same projection. Tests cover actor
 versus assignee, active/inactive/missing/legacy resolution, raw identity preservation and real
 SQL/HTTP names derived from the authenticated user despite a spoofed request actor.
-The SLA summary remains an authenticated API/Swagger report, with no added dashboard page.
 
 Actor-display validation passed five backend cases (four SQLite identity/legacy/inactive/missing
 cases plus the real authenticated SQL/HTTP scenario), five targeted UI/detail cases, type checking,
@@ -469,3 +467,39 @@ The full test attempt was interrupted by sandbox compiler-pipe/test-host connect
 it is not reported as a passing full suite. Compilation succeeded with shared compilation disabled,
 and the five focused backend cases ran outside the sandbox with explicit approval, using only
 their disposable database. The earlier 117/48 whole-suite counts belong to the report-stage run.
+
+
+## Report UI 
+
+The protected /reports/sla-summary page is linked from the shell. It uses the shared request
+client for Bearer/401 behavior, typed report contracts, UTC calendar dates and an explicit
+Generate action. UI dates include both endpoints; a validated exclusive midnight following the
+end date is sent to the existing API. Defaults use the current UTC month/day, never browser local
+time. Invalid/reversed/impossible/overflowing date ranges never issue a request. Report tables
+show server counts, rates and nullable averages directly rather than averaging group averages
+or recalculating the SQL report in the browser. A zero average remains visible as 0.00; null is
+No resolutions. Current assignee grouping includes inactive/unassigned actors as supplied by API.
+
+Draft filters are separate from submitted query labels. A new submission hides old rows immediately;
+query identity/retry revision determine loading state without a synchronous effect setState.
+AbortController cancels an obsolete/unmounted request and prevents late data/errors replacing the
+current result. Pending controls are disabled; shared errors include validation details, and retry
+uses the last submitted range even if draft controls have changed. No errors were suppressed to
+bypass React's effect lint rule. The existing form/table styling is retained with horizontal
+scrolling and an explicit small-screen hint. No backend schema change or dependency was needed.
+
+Validation passed all 65 web tests, types, lint and production build. New cases cover inclusive UTC
+bounds/leap dates, every metric, agent/priority, zero/null average, Unassigned/empty data, invalid
+no-call, loading/cleared stale rows, cancellation, server details/retry, auth headers/401 and report
+login-return routing. Live browser verification at localhost:5173 passed login and both groupings.
+
+The full Docker verifier then passed with the existing 5080 service left up, disposable API 51991,
+SQL 51992 and Vite 5174. It verified 40 tickets/three migrations/six hashes, app UID 1654, excluded
+runtime material, proxy login/list/report/create/escalate, unchanged credentials/history after
+restart, health 503 with SQL stopped and 200 on recovery. Plain rebuild after a .cs source edit
+showed restore step 14 CACHED; exact original source bytes were restored and rebuilt. Measured
+runtime size is 315415183 bytes versus SDK 917721866 bytes for the tags recorded in README.
+Result complete=true, disposableStackRemoved=true, cleanupErrors=[] is recorded in ignored
+artifacts/task4-1SQbxy/result.json. This supersedes the earlier pending Docker verification status;
+no user development containers or database volume were reset. A fresh-clone submission rehearsal
+and candidate review/commit remain separate hand-in steps.

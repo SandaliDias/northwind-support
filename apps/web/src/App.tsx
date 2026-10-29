@@ -15,6 +15,7 @@ export function App() {
         <nav className="app__nav" aria-label="Main">
           <NavLink to="/tickets">Tickets</NavLink>
           <NavLink to="/customers">Customers</NavLink>
+          <NavLink to="/reports/sla-summary">SLA summary</NavLink>
           <span>Signed in as {auth.user?.fullName}</span>
           <button type="button" className="button button--ghost" onClick={() => {
             auth.logout(); void navigate('/login', { replace: true });

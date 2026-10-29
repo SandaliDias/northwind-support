@@ -24,6 +24,7 @@ function show(path = '/tickets') {
     <Route path="/login" element={<LoginPage />} />
     <Route element={<ProtectedRoute />}><Route element={<App />}>
       <Route path="/tickets" element={<Area />} /><Route path="/tickets/:id" element={<Area />} />
+      <Route path="/reports/sla-summary" element={<Area />} />
     </Route></Route>
   </Routes></MemoryRouter></AuthProvider>);
 }
@@ -39,6 +40,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clearSession(); vi.unstubAllGlobals(); });
 
 describe('authentication flow', () => {
+  it('protects the report destination and returns there after login', async () => {
+    show('/reports/sla-summary');
+    expect(await screen.findByLabelText('Email')).toBeVisible();
+    enter();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('/reports/sla-summary')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'SLA summary' })).toHaveAttribute('href', '/reports/sla-summary');
+  });
   it('redirects anonymous visitors and does not render private content', async () => {
     show('/tickets/42?tab=history');
     expect(await screen.findByLabelText('Email')).toBeVisible();
