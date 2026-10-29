@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { availablePort } from './verification-ports.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const artifacts = path.join(root, 'artifacts');
@@ -17,17 +17,14 @@ const key = randomBytes(48).toString('base64');
 const password = 'Local_Dev_Password1';
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function freePort(port = 0) {
-  const server = createServer();
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-  const selected = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
-  return selected;
-}
-await freePort(5080); // Verify the assessment's actual host port; never stop another service to take it.
-const sqlPort = await freePort();
+const apiPort = await availablePort(5080);
+let sqlPort = await availablePort();
+while (sqlPort === apiPort) sqlPort = await availablePort();
+const proxyTarget = `http://localhost:${apiPort}`;
+console.log(apiPort === 5080 ? 'Using API test port 5080.' :
+  `Port 5080 is occupied; using ${apiPort} for the disposable API. Your existing service stays running.`);
 const settings = { Jwt__SigningKey: key, MSSQL_SA_PASSWORD: password, ASPNETCORE_ENVIRONMENT: 'Development',
-  SQLSERVER_PORT: String(sqlPort), API_PORT: '5080', Jwt__Issuer: 'Northwind.SupportDesk',
+  SQLSERVER_PORT: String(sqlPort), API_PORT: String(apiPort), Jwt__Issuer: 'Northwind.SupportDesk',
   Jwt__Audience: 'Northwind.SupportDesk.Web', Jwt__TokenLifetimeMinutes: '60',
   Sla__BaseWindowHours__Critical: '4', Sla__BaseWindowHours__High: '8', Sla__BaseWindowHours__Medium: '24',
   Sla__BaseWindowHours__Low: '72', Sla__PremiumCustomerMultiplier: '0.5', Sla__MinimumWindowHours: '1',
@@ -56,7 +53,7 @@ function run(command, args, { log = true, childEnv = env } = {}) {
 }
 const docker = (args, options) => run('docker', args, options);
 const dc = (args, options) => docker([...compose, ...args], options);
-const base = 'http://127.0.0.1:5080';
+const base = `http://127.0.0.1:${apiPort}`;
 async function request(url, { token, body, method = body ? 'POST' : 'GET' } = {}) {
   return fetch(url, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined,
@@ -91,7 +88,8 @@ async function stopWeb() {
   else process.kill(-web.pid, 'SIGTERM');
   web = undefined;
 }
-const result = { project, verifiedAtUtc: new Date().toISOString(), evidenceDirectory: path.relative(root, evidence) };
+const result = { project, verifiedAtUtc: new Date().toISOString(), evidenceDirectory: path.relative(root, evidence),
+  apiPort, sqlPort, proxyTarget, usedFallbackApiPort: apiPort !== 5080 };
 try {
   console.log(`Verifying an isolated stack: ${project}`);
   // Inspect configuration internally, never log its secret-bearing environment section.
@@ -134,8 +132,8 @@ try {
   assert.ok(!history.includes(key));
   result.runtimeContainsNoAppsettingsSourcesCertificatesOrSdk = true;
 
-  console.log('Starting the local web command against http://localhost:5080...');
-  const webEnv = { ...env, VITE_API_PROXY_TARGET: 'http://localhost:5080', NO_COLOR: '1' };
+  console.log(`Starting the local web command against ${proxyTarget}...`);
+  const webEnv = { ...env, VITE_API_PROXY_TARGET: proxyTarget, NO_COLOR: '1' };
   web = process.platform === 'win32'
     ? spawn('cmd.exe', ['/d', '/s', '/c', 'npm run web'], { cwd: root, env: webEnv, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     : spawn('npm', ['run', 'web'], { cwd: root, env: webEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -155,6 +153,12 @@ try {
   const proxySession = await login(origin);
   const proxied = await (await request(`${origin}/api/tickets`, { token: proxySession.token })).json();
   assert.equal(proxied.totalCount, 40);
+  const reportResponse = await request(`${origin}/api/reports/sla-summary?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z&groupBy=agent`,
+    { token: proxySession.token });
+  assert.equal(reportResponse.status, 200);
+  const reportRows = await reportResponse.json();
+  assert.equal(reportRows.reduce((total, row) => total + row.total, 0), 40);
+  result.viteProxySlaSummary = true;
   const createdResponse = await request(`${origin}/api/tickets`, { token: proxySession.token, body: {
     title: 'Task 4 container verification', description: 'Created through the local Vite proxy to test the container.',
     customerId: 1, categoryId: 1, requestedPriority: 'Low' } });

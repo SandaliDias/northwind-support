@@ -169,6 +169,8 @@ export interface TicketEscalation {
   toDueAtUtc: string | null;
   reason: string;
   escalatedBy: string;
+  /** Current display name for a token-derived actor; older servers may omit this. */
+  escalatedByAgent?: AgentSummary | null;
   escalatedAtUtc: string;
 }
 
@@ -178,3 +180,20 @@ export interface EscalateTicketResult { ticket: TicketDetail; escalation: Ticket
 export interface AuthUser { id: number; fullName: string; email: string }
 export interface LoginPayload { email: string; password: string }
 export interface LoginResult { token: string; expiresAtUtc: string; user: AuthUser }
+
+export type SlaSummaryGrouping = 'agent' | 'priority';
+export interface SlaSummaryQuery { from: string; to: string; groupBy: SlaSummaryGrouping }
+export interface SlaSummaryGroup {
+  agentId: number | null;
+  agentName: string | null;
+  priority: TicketPriority | null;
+  total: number;
+  breached: number;
+  atRisk: number;
+  within: number;
+  met: number;
+  notApplicable: number;
+  /** Percentage in [0, 100], already calculated by the API. */
+  breachRate: number;
+  averageResolutionHours: number | null;
+}

@@ -391,3 +391,115 @@ References consulted: [.NET containers](https://learn.microsoft.com/en-us/dotnet
 [Compose startup order](https://docs.docker.com/compose/how-tos/startup-order), and
 [ASP.NET health checks](https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks?view=aspnetcore-10.0), and
 [SqlClient connection options](https://learn.microsoft.com/en-us/sql/connect/ado-net/connection-options).
+
+## Optional stretch: SLA summary report
+
+The stretch is a protected API read endpoint, following the existing query/handler structure, and a UI dashboard to display the generate summary
+ISlaReportQueries is the application read seam; Infrastructure owns the EF/SQL expression, and the
+controller stays thin under the existing authenticated-user fallback policy.
+
+The specification leaves date cohort, rate units and empty/no-SLA behavior open. I chose required
+ISO 8601 timestamps with explicit offsets, normalised to UTC, and a creation-time [from,to) cohort.
+A half-open interval avoids end-of-day guesses and allows adjacent reports without double counting.
+Date-only/offsetless/invalid input, equal/reversed instants and unsupported grouping return the
+shared validation error format. Grouping is case-insensitive agent (default) or priority. Names
+are labels; agent ID is the identity, including current ownership by inactive agents. Unassigned
+is an explicit null-ID group. Empty cohorts return an empty array, not synthetic zero groups.
+
+The report is a current-state view of that creation cohort: it is not a historical as-at report
+and does not attribute a ticket to its owner at resolution. Counts reuse the exact mapped
+TicketSlaStatus function with one injected now and current configured threshold, so report and
+ticket lists share boundary rules. notApplicable is returned in addition to the requested four
+state counts, ensuring the components reconcile with total. Breach rate is a percentage of all
+tickets in the group, rounded to two decimal places; an SLA-only denominator was rejected because
+it would silently diverge from the requested total. The explicit no-SLA count makes that choice
+visible. Average resolution hours uses creation to resolution for every resolved ticket, even
+without an SLA, ignores unresolved tickets and is null if no ticket is resolved.
+
+The IQueryable creation-time filter, left join, GroupBy, conditional counts, SQL ROUND and AVG
+remain in one composed query with one final ToListAsync. No ticket entities or per-group rows
+are loaded before aggregation. Grouped DTO projection is untracked and excludes descriptions,
+credentials and unrelated entity data. An existing CreatedAtUtc index was not invented; adding a
+report-specific index should follow representative execution plans rather than a tiny fixture.
+
+A whole-duration DATEDIFF(millisecond) would overflow after approximately 24.8 days; DATEDIFF(second)
+also has a finite range. Instead elapsed time is whole day boundaries times 24 plus the difference
+between the two times of day in milliseconds divided by 3,600,000. Each millisecond difference
+stays within one day, while whole-day differences cover the SQL datetime2 range. This preserves
+the schema's millisecond precision, including cross-midnight fractional durations, without a new
+SQL function/migration. The real-provider test includes a century-long resolution to disprove
+an accidentally overflowing implementation.
+
+Tests validate bounds/offsets/grouping and prove invalid requests do not reach the read seam,
+plus UTC normalisation and cancellation forwarding. SQL tests create/drop only their unique
+database, cover both groupings, every state, inactive/unassigned owners, equal display names,
+from inclusion/to exclusion, empty results, null/fractional/long averages, changed now/threshold,
+rounding and count reconciliation. An interceptor asserts exactly one executed reader command
+per report with GROUP BY, AVG, counts and the mapped SLA function; the change tracker remains empty.
+Real HTTP tests prove 401 without a token, shared 400 validation, 200 with a token, 40 seeded
+tickets across both groupings, string priority JSON and offset URLs with an encoded plus.
+The report-specific run passed 20 tests; final whole-suite checks are recorded in README.
+
+Official [SQL Server EF function mappings](https://learn.microsoft.com/en-us/ef/core/providers/sql-server/functions)
+were checked for date arithmetic/rounding. Those mappings were then verified through executed
+SQL Server aggregation rather than relying on LINQ appearance or SQLite-only behavior.
+
+
+## Escalation actor display follow-up (29 October 2026)
+
+The history component rendered the audit string directly, so a real token-derived actor appeared
+as agent:1 rather than Alex Turner. Changing the immutable stored identity to a display name would
+weaken attribution; guessing from the assigned owner would attribute the action to the wrong person.
+The read projection now supplies optional EscalatedByAgent metadata through another left join in
+the existing history query, including inactive agents. UI uses its FullName, falling back to the
+original value for legacy labels, unavailable metadata or deleted actors. It is the current name,
+not a historical name snapshot. The underlying audit actor is unchanged; no migration is needed.
+The escalation response and subsequent history GET share the same projection. Tests cover actor
+versus assignee, active/inactive/missing/legacy resolution, raw identity preservation and real
+SQL/HTTP names derived from the authenticated user despite a spoofed request actor.
+
+Actor-display validation passed five backend cases (four SQLite identity/legacy/inactive/missing
+cases plus the real authenticated SQL/HTTP scenario), five targeted UI/detail cases, type checking,
+lint and a complete Release solution build with zero warnings/errors. The initial correlated
+lookup translated to APPLY, which SQLite cannot execute; regression tests caught this and the
+query was changed to an explicit LEFT JOIN. Both SQLite and SQL/HTTP cases then passed.
+The full test attempt was interrupted by sandbox compiler-pipe/test-host connection failures;
+it is not reported as a passing full suite. Compilation succeeded with shared compilation disabled,
+and the five focused backend cases ran outside the sandbox with explicit approval, using only
+their disposable database. The earlier 117/48 whole-suite counts belong to the report-stage run.
+
+
+## Report UI 
+
+The protected /reports/sla-summary page is linked from the shell. It uses the shared request
+client for Bearer/401 behavior, typed report contracts, UTC calendar dates and an explicit
+Generate action. UI dates include both endpoints; a validated exclusive midnight following the
+end date is sent to the existing API. Defaults use the current UTC month/day, never browser local
+time. Invalid/reversed/impossible/overflowing date ranges never issue a request. Report tables
+show server counts, rates and nullable averages directly rather than averaging group averages
+or recalculating the SQL report in the browser. A zero average remains visible as 0.00; null is
+No resolutions. Current assignee grouping includes inactive/unassigned actors as supplied by API.
+
+Draft filters are separate from submitted query labels. A new submission hides old rows immediately;
+query identity/retry revision determine loading state without a synchronous effect setState.
+AbortController cancels an obsolete/unmounted request and prevents late data/errors replacing the
+current result. Pending controls are disabled; shared errors include validation details, and retry
+uses the last submitted range even if draft controls have changed. No errors were suppressed to
+bypass React's effect lint rule. The existing form/table styling is retained with horizontal
+scrolling and an explicit small-screen hint. No backend schema change or dependency was needed.
+
+Validation passed all 65 web tests, types, lint and production build. New cases cover inclusive UTC
+bounds/leap dates, every metric, agent/priority, zero/null average, Unassigned/empty data, invalid
+no-call, loading/cleared stale rows, cancellation, server details/retry, auth headers/401 and report
+login-return routing. Live browser verification at localhost:5173 passed login and both groupings.
+
+The full Docker verifier then passed with the existing 5080 service left up, disposable API 51991,
+SQL 51992 and Vite 5174. It verified 40 tickets/three migrations/six hashes, app UID 1654, excluded
+runtime material, proxy login/list/report/create/escalate, unchanged credentials/history after
+restart, health 503 with SQL stopped and 200 on recovery. Plain rebuild after a .cs source edit
+showed restore step 14 CACHED; exact original source bytes were restored and rebuilt. Measured
+runtime size is 315415183 bytes versus SDK 917721866 bytes for the tags recorded in README.
+Result complete=true, disposableStackRemoved=true, cleanupErrors=[] is recorded in ignored
+artifacts/task4-1SQbxy/result.json. This supersedes the earlier pending Docker verification status;
+no user development containers or database volume were reset. A fresh-clone submission rehearsal
+and candidate review/commit remain separate hand-in steps.

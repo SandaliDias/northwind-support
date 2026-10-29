@@ -80,6 +80,34 @@ public sealed class EscalationPersistenceTests : IDisposable
         Assert.Equal("Winner change", (await _db.Set<TicketEscalation>().SingleAsync()).Reason);
     }
 
+    [Theory]
+    [InlineData("known")]
+    [InlineData("inactive")]
+    [InlineData("missing")]
+    [InlineData("legacy")]
+    public async Task HistoryResolvesActorNameWithoutChangingTheImmutableAuditValue(string actorKind)
+    {
+        if (actorKind == "inactive") _agent.Deactivate();
+        var actor = actorKind switch
+        {
+            "legacy" => "Legacy team lead",
+            "missing" => "agent:999999",
+            _ => $"agent:{_agent.Id}"
+        };
+        _db.Add(_ticket.Escalate(_clock.UtcNow.AddHours(24), null, "Actor name case", actor, _clock.UtcNow));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+        var result = Assert.Single(await new EscalationStore(_db).GetForTicketAsync(_ticket.Id, default));
+        Assert.Equal(actor, result.EscalatedBy);
+        if (actorKind is "known" or "inactive")
+        {
+            Assert.Equal(_agent.Id, result.EscalatedByAgent!.Id);
+            Assert.Equal(_agent.FullName, result.EscalatedByAgent.FullName);
+        }
+        else Assert.Null(result.EscalatedByAgent);
+        Assert.Equal(actor, (await _db.Set<TicketEscalation>().SingleAsync()).EscalatedBy);
+    }
+
     [Fact]
     public async Task HistoryCannotBeUpdatedOrDeletedThroughTheUnitOfWork()
     {

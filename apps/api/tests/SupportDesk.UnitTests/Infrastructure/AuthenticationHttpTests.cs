@@ -122,8 +122,11 @@ public sealed class AuthenticationHttpTests
         Assert.Equal(HttpStatusCode.OK, escalated.StatusCode);
         var decision = await escalated.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal($"agent:{login.User.Id}", decision.GetProperty("escalation").GetProperty("escalatedBy").GetString());
+        Assert.Equal(login.User.Id, decision.GetProperty("escalation").GetProperty("escalatedByAgent").GetProperty("id").GetInt32());
+        Assert.Equal(login.User.FullName, decision.GetProperty("escalation").GetProperty("escalatedByAgent").GetProperty("fullName").GetString());
         var history = await client.GetFromJsonAsync<JsonElement>($"/api/tickets/{id}/escalations");
         Assert.Equal($"agent:{login.User.Id}", history[0].GetProperty("escalatedBy").GetString());
+        Assert.Equal(login.User.FullName, history[0].GetProperty("escalatedByAgent").GetProperty("fullName").GetString());
         var account = await host.Database.Set<Agent>().SingleAsync(a => a.Id == login.User.Id);
         account.Deactivate();
         await host.Database.SaveChangesAsync();
