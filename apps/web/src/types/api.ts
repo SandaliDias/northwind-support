@@ -65,6 +65,7 @@ export interface TicketListItem {
 }
 
 export interface TicketDetail {
+  triage?: TriageDecision | null;
   id: number;
   reference: string;
   title: string;
@@ -90,6 +91,7 @@ export interface TicketFilters {
   customerId?: number;
   assignedAgentId?: number;
   unassignedOnly?: boolean;
+  slaStatus?: SlaStatus;
   page: number;
   pageSize: number;
   sortBy: TicketSortField;
@@ -149,4 +151,49 @@ export interface ProblemDetails {
   detail?: string;
   traceId?: string;
   errors?: Record<string, string[]>;
+}
+
+export interface TriageDecision {
+  priorityReason: string;
+  slaWindowReason: string;
+  assignmentReason: string;
+}
+
+export interface TicketEscalation {
+  id: number;
+  fromPriority: TicketPriority;
+  toPriority: TicketPriority;
+  fromAgent: AgentSummary | null;
+  toAgent: AgentSummary | null;
+  fromDueAtUtc: string | null;
+  toDueAtUtc: string | null;
+  reason: string;
+  escalatedBy: string;
+  /** Current display name for a token-derived actor; older servers may omit this. */
+  escalatedByAgent?: AgentSummary | null;
+  escalatedAtUtc: string;
+}
+
+export interface EscalateTicketPayload { reason: string }
+export interface EscalateTicketResult { ticket: TicketDetail; escalation: TicketEscalation }
+
+export interface AuthUser { id: number; fullName: string; email: string }
+export interface LoginPayload { email: string; password: string }
+export interface LoginResult { token: string; expiresAtUtc: string; user: AuthUser }
+
+export type SlaSummaryGrouping = 'agent' | 'priority';
+export interface SlaSummaryQuery { from: string; to: string; groupBy: SlaSummaryGrouping }
+export interface SlaSummaryGroup {
+  agentId: number | null;
+  agentName: string | null;
+  priority: TicketPriority | null;
+  total: number;
+  breached: number;
+  atRisk: number;
+  within: number;
+  met: number;
+  notApplicable: number;
+  /** Percentage in [0, 100], already calculated by the API. */
+  breachRate: number;
+  averageResolutionHours: number | null;
 }

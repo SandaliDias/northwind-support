@@ -1,8 +1,11 @@
 using System.Text.Json.Serialization;
+using Microsoft.OpenApi;
 using SupportDesk.Application;
 using SupportDesk.Infrastructure;
+using SupportDesk.Presentation.Authentication;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
+using SupportDesk.Presentation.Health;
 using SupportDesk.Presentation.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,10 +28,32 @@ builder.Services.AddCors(options => options.AddPolicy(
         .AllowAnyMethod()));
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.OperationFilter<AnonymousOperationFilter>();
+    options.AddSecurityDefinition("bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Sign in at /api/auth/login and paste the returned token."
+    });
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("bearer", document)] = []
+    });
+});
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddAgentAuthentication(builder.Configuration);
+builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database",
+    timeout: TimeSpan.FromSeconds(5));
+
+var sla = builder.Configuration.GetSection("Sla").Get<SupportDesk.Domain.Aggregates.Tickets.SlaPolicy>()
+    ?? new SupportDesk.Domain.Aggregates.Tickets.SlaPolicy();
+sla.Validate();
+builder.Services.AddSingleton(sla);
 
 var app = builder.Build();
 
@@ -44,7 +69,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(FrontendCorsPolicy);
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
+// Explicit public exception to the central authenticated-user fallback policy.
+app.MapHealthChecks("/health").AllowAnonymous();
 
 app.Run();

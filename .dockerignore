@@ -1,0 +1,47 @@
+# Default-deny context: only the API source graph and shared build inputs are needed.
+**
+!global.json
+!Directory.Build.props
+!Directory.Packages.props
+!apps/
+!apps/api/
+!apps/api/Dockerfile
+!apps/api/src/
+!apps/api/src/**
+
+# Generated outputs and dependencies, at any depth.
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/TestResults
+**/coverage
+artifacts
+
+# Repository/developer metadata and material unrelated to the API build.
+.git
+.github
+.vscode
+.vs
+.idea
+.config
+apps/web
+apps/api/tests
+db
+spec
+*.md
+*.pdf
+SupportDesk.sln
+package*.json
+
+# Runtime configuration and secrets never enter the build context.
+**/.env
+**/.env.*
+**/appsettings*.json
+**/secrets.json
+**/*.local.json
+**/*.pfx
+**/*.p12
+**/*.pem
+**/*.key
+**/launchSettings.json

@@ -9,6 +9,16 @@ namespace SupportDesk.UnitTests.TestDoubles;
 /// </summary>
 public sealed class TicketBuilder
 {
+    private DateTime? _dueAtUtc;
+    private DateTime _startedAtUtc = FixedClock.DefaultNow;
+
+    public TicketBuilder WithSla(DateTime start, DateTime due)
+    {
+        _startedAtUtc = start;
+        _dueAtUtc = due;
+        return this;
+    }
+
     private string _reference = "TCK-0001";
     private TicketPriority _priority = TicketPriority.Medium;
     private TicketStatus _status = TicketStatus.New;
@@ -56,6 +66,11 @@ public sealed class TicketBuilder
             categoryId: 1,
             _priority,
             FixedClock.DefaultNow);
+
+        if (_dueAtUtc is not null)
+        {
+            ticket.ApplyTriage(_dueAtUtc.Value, null, _startedAtUtc);
+        }
 
         if (_assignedAgentId is not null)
         {

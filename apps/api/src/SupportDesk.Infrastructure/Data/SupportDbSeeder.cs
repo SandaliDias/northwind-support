@@ -10,21 +10,33 @@ namespace SupportDesk.Infrastructure.Data;
 
 /// <summary>
 /// Development seed data: the small support desk the team uses to demo the application.
-/// Mirrors <c>database/02_seed.sql</c>, including the relative timestamps, so both routes
+/// Mirrors <c>db/seed.sql</c>, including the relative timestamps, so both routes
 /// produce the same database.
 /// </summary>
 /// <remarks>
-/// Every aggregate is built through its own behaviour. The two historical values no behaviour
-/// produces - a ticket's last update and its due date - are set through EF Core directly.
+/// Aggregates are built through their own behaviour, retaining historical priorities/windows.
+/// Only the historical last-update timestamp is set through EF Core directly.
 /// </remarks>
-public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger)
+public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger, IPasswordService? passwords = null)
 {
-    /// <summary>Seeds the database, unless it already has tickets in it.</summary>
+    public const string DevelopmentPassword = "Local_Only_Demo1!";
+    private readonly IPasswordService _passwords = passwords ?? new Services.IdentityPasswordService();
+
+    private async Task SeedMissingCredentialsAsync(CancellationToken ct)
+    {
+        var emails = SeedAgents(clock.UtcNow).Select(a => a.Email).ToArray();
+        var missing = await db.Set<Agent>().Where(a => emails.Contains(a.Email) && a.PasswordHash == null).ToListAsync(ct);
+        foreach (var agent in missing) agent.SetPasswordHash(_passwords.Hash(agent, DevelopmentPassword));
+        if (missing.Count > 0) await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Development-only fixture seeding; the host only invokes it in Development.</summary>
     public async Task SeedAsync(CancellationToken ct = default)
     {
         if (await db.Set<Ticket>().AnyAsync(ct))
         {
-            logger.LogInformation("Seed data already present; skipping.");
+            await SeedMissingCredentialsAsync(ct);
+            logger.LogInformation("Seed data already present; missing demo credentials checked.");
             return;
         }
 
@@ -42,6 +54,7 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
         SeedSpecializations(agents, categories);
         await db.SaveChangesAsync(ct);
 
+        await SeedMissingCredentialsAsync(ct);
         SeedTickets(now, customers, categories, agents);
         await db.SaveChangesAsync(ct);
 
@@ -180,6 +193,8 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
                 row.Priority,
                 createdAtUtc);
 
+            ticket.ApplyTriage(createdAtUtc.AddMinutes(row.SlaWindowMinutes), null, createdAtUtc);
+
             if (row.AgentIndex is not null)
             {
                 ticket.AssignTo(agents[row.AgentIndex.Value - 1].Id, createdAtUtc);
@@ -194,7 +209,6 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
             var entry = db.Add(ticket);
             entry.Property(t => t.UpdatedAtUtc).CurrentValue =
                 createdAtUtc.AddMinutes(row.ResolvedAfterMinutes ?? row.CreatedMinutesAgo / 2);
-            entry.Property(t => t.DueAtUtc).CurrentValue = createdAtUtc.AddMinutes(row.SlaWindowMinutes);
         }
     }
 

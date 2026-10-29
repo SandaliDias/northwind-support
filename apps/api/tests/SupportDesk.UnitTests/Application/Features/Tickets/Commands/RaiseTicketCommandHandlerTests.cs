@@ -43,13 +43,38 @@ public class RaiseTicketCommandHandlerTests
     {
         var context = new TicketCommandTestContext();
         context.Customers
-            .Setup(c => c.ExistsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+            .Setup(c => c.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SupportDesk.Domain.Aggregates.Customers.Customer?)null);
 
         var exception = await Assert.ThrowsAsync<NotFoundException>(
             () => context.RaiseTicket.HandleAsync(Request(), CancellationToken.None));
 
         Assert.Contains("Customer", exception.Message);
         context.VerifySaved(Times.Never());
+    }
+
+    [Fact]
+    public async Task CreateUsesCategoryFlagsAndReturnsUnassignedDecision()
+    {
+        var context = new TicketCommandTestContext();
+        context.Categories.Setup(c => c.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SupportDesk.Domain.Aggregates.Categories.Category("Arbitrary flagged category", true, true));
+        var result = await context.RaiseTicket.HandleAsync(Request(TicketPriority.Low), default);
+        Assert.Equal(TicketPriority.Critical, context.AddedTicket!.Priority);
+        Assert.Equal(context.Clock.UtcNow.AddHours(2), context.AddedTicket.DueAtUtc);
+        Assert.Null(context.AddedTicket.AssignedAgentId);
+        Assert.Contains("forces Critical", result.Triage!.PriorityReason);
+        Assert.Contains("Unassigned because", result.Triage.AssignmentReason);
+        context.VerifySaved(Times.Once());
+    }
+
+    [Fact]
+    public async Task CreateAssignsEligibleAgent()
+    {
+        var context = new TicketCommandTestContext();
+        context.ExistingAgent(4, "Sara");
+        await context.RaiseTicket.HandleAsync(Request(), default);
+        Assert.Equal(4, context.AddedTicket!.AssignedAgentId);
+        Assert.Equal(context.Clock.UtcNow.AddHours(12), context.AddedTicket.DueAtUtc);
     }
 }

@@ -15,6 +15,7 @@ public sealed class RaiseTicketCommandHandler(
     ITicketRepository tickets,
     ICustomerRepository customers,
     ICategoryRepository categories,
+    TicketTriageService triage,
     IUnitOfWork unitOfWork,
     IClock clock,
     GetTicketQueryHandler getTicket,
@@ -23,26 +24,26 @@ public sealed class RaiseTicketCommandHandler(
     /// <exception cref="NotFoundException">The customer or the category does not exist.</exception>
     public async Task<TicketDetailDto> HandleAsync(CreateTicketRequest request, CancellationToken ct)
     {
-        if (!await customers.ExistsAsync(request.CustomerId, ct))
+        var customer = await customers.GetByIdAsync(request.CustomerId, ct)
+            ?? throw new NotFoundException("Customer", request.CustomerId);
+        var category = await categories.GetByIdAsync(request.CategoryId, ct)
+            ?? throw new NotFoundException("Category", request.CategoryId);
+        if (!category.IsActive)
         {
-            throw new NotFoundException("Customer", request.CustomerId);
+            throw new ConflictException("The selected category is inactive.");
         }
 
-        if (!await categories.ExistsAsync(request.CategoryId, ct))
-        {
-            throw new NotFoundException("Category", request.CategoryId);
-        }
-
-        // The response window is still worked out by hand by the team lead, so a new ticket
-        // starts with no due date and no owner.
+        var now = clock.UtcNow;
+        var decision = await triage.DecideAsync(category, customer, request.RequestedPriority, now, ct);
         var ticket = Ticket.Raise(
             await tickets.NextReferenceAsync(ct),
             request.Title,
             request.Description,
             request.CustomerId,
             request.CategoryId,
-            request.RequestedPriority ?? TicketPriority.Medium,
-            clock.UtcNow);
+            decision.Priority,
+            now);
+        ticket.ApplyTriage(decision.DueAtUtc, decision.AgentId, now);
 
         await tickets.AddAsync(ticket, ct);
         await unitOfWork.SaveChangesAsync(ct);
@@ -51,6 +52,8 @@ public sealed class RaiseTicketCommandHandler(
             "Ticket {Reference} raised for customer {CustomerId} in category {CategoryId}.",
             ticket.Reference, ticket.CustomerId, ticket.CategoryId);
 
-        return await getTicket.HandleAsync(ticket.Id, ct);
+        var detail = await getTicket.HandleAsync(ticket.Id, ct);
+        detail.Triage = decision.Explanation;
+        return detail;
     }
 }

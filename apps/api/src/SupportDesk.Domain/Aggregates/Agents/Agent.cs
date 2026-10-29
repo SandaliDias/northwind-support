@@ -21,7 +21,7 @@ public sealed class Agent : AggregateRoot
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxOpenTickets);
 
         FullName = fullName;
-        Email = email;
+        Email = NormalizeEmail(email);
         IsActive = true;
         MaxOpenTickets = maxOpenTickets;
         CreatedAtUtc = createdAtUtc;
@@ -30,6 +30,17 @@ public sealed class Agent : AggregateRoot
     public string FullName { get; private set; } = string.Empty;
 
     public string Email { get; private set; } = string.Empty;
+
+    public string? PasswordHash { get; private set; }
+
+    public static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+    public void SetPasswordHash(string hash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(hash);
+        if (hash.Length > 512) throw new ArgumentException("Password hash exceeds storage capacity.", nameof(hash));
+        PasswordHash = hash;
+    }
 
     /// <summary>Inactive agents keep their history but take no new work.</summary>
     public bool IsActive { get; private set; }

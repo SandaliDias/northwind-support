@@ -3,7 +3,9 @@ using SupportDesk.Application.Contracts.Common;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
 using SupportDesk.Application.Features.Tickets.Commands.ChangeTicketStatus;
+using SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
+using SupportDesk.Application.Features.Tickets.Queries.GetEscalations;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
 using SupportDesk.Application.Features.Tickets.Queries.SearchTickets;
 
@@ -38,6 +40,16 @@ public sealed class TicketsController : ControllerBase
 
         return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
     }
+
+    [HttpPost("{id:int}/escalate")]
+    public Task<EscalateTicketResponse> Escalate(int id, EscalateTicketRequest request,
+        [FromServices] EscalateTicketCommandHandler handler, CancellationToken ct) =>
+        handler.HandleAsync(id, request, ct);
+
+    [HttpGet("{id:int}/escalations")]
+    public Task<IReadOnlyList<TicketEscalationDto>> History(int id,
+        [FromServices] GetEscalationsQueryHandler handler, CancellationToken ct) =>
+        handler.HandleAsync(id, ct);
 
     /// <summary>Moves a ticket to another status.</summary>
     [HttpPatch("{id:int}/status")]

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SupportDesk.Application.Abstractions;
 using SupportDesk.Application.Contracts.Agents;
+using SupportDesk.Application.Contracts.Auth;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Aggregates.Categories;
@@ -11,6 +12,10 @@ namespace SupportDesk.Infrastructure.Queries;
 
 public sealed class AgentQueries(SupportDbContext db) : IAgentQueries
 {
+    public Task<AuthUserDto?> GetActiveUserAsync(int id, CancellationToken ct) =>
+        db.Set<Agent>().AsNoTracking().Where(a => a.Id == id && a.IsActive)
+            .Select(a => new AuthUserDto(a.Id, a.FullName, a.Email)).FirstOrDefaultAsync(ct);
+
     public async Task<IReadOnlyList<AgentDto>> GetAllAsync(CancellationToken ct) =>
         await db.Set<Agent>()
             .AsNoTracking()
